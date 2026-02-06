@@ -10,7 +10,7 @@ const SCOPES = [
   "https://www.googleapis.com/auth/gmail.labels",
 ];
 
-const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), ".magic-data");
+const DATA_DIR = process.env.DATA_DIR || join("/tmp", ".magic-data");
 const TOKEN_PATH = join(DATA_DIR, "gmail-tokens.json");
 
 function getOAuthClient(): OAuth2Client {
