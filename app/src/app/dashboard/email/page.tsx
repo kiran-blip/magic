@@ -261,8 +261,24 @@ export default function EmailPage() {
             {/* Email list */}
             <div className="flex-1 space-y-2">
               {loading ? (
-                <div className="bg-card border border-border rounded-xl p-8 text-center text-muted">
-                  Loading emails...
+                <div className="space-y-2">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="bg-card border border-border rounded-xl p-4 animate-pulse"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <div className="h-4 w-32 bg-border rounded" />
+                            <div className="h-3 w-16 bg-border rounded" />
+                          </div>
+                          <div className="h-4 w-48 bg-border rounded mt-2" />
+                          <div className="h-3 w-64 bg-border rounded mt-2" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : emails.length === 0 ? (
                 <div className="bg-card border border-border rounded-xl p-8 text-center text-muted">

@@ -145,15 +145,30 @@ export async function listEmails(
 
   if (!res.data.messages) return [];
 
-  const emails: EmailMessage[] = [];
-  for (const item of res.data.messages) {
-    const msg = await gmail.users.messages.get({
-      userId: "me",
-      id: item.id!,
-      format: "full",
-    });
-    emails.push(parseMessage(msg.data));
-  }
+  // Fetch all messages in parallel with metadata format (fast)
+  const emails = await Promise.all(
+    res.data.messages.map(async (item) => {
+      const msg = await gmail.users.messages.get({
+        userId: "me",
+        id: item.id!,
+        format: "metadata",
+        metadataHeaders: ["From", "To", "Subject", "Date"],
+      });
+      const headers = msg.data.payload?.headers;
+      return {
+        id: msg.data.id || "",
+        threadId: msg.data.threadId || "",
+        from: getHeader(headers, "From"),
+        to: getHeader(headers, "To"),
+        subject: getHeader(headers, "Subject"),
+        snippet: msg.data.snippet || "",
+        body: "", // Only fetched when opening a single email
+        date: getHeader(headers, "Date"),
+        labels: msg.data.labelIds || [],
+        isUnread: msg.data.labelIds?.includes("UNREAD") || false,
+      };
+    })
+  );
 
   return emails;
 }
