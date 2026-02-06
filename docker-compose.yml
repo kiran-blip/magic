@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  magic-computer:
+    build: ./app
+    ports:
+      - "3000:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-magic123}
+      - JWT_SECRET=${JWT_SECRET:-magic-computer-secret-change-me}
+      - DOCKER_SOCKET=/var/run/docker.sock
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENCLAW_API_URL=${OPENCLAW_API_URL:-http://host.docker.internal:11434}
+    restart: unless-stopped
+    networks:
+      - magic-network
+
+networks:
+  magic-network:
+    driver: bridge
+    name: magic-network
