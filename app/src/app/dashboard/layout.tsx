@@ -7,6 +7,7 @@ import AiChat from "@/components/AiChat";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: "◆" },
+  { href: "/dashboard/email", label: "Email", icon: "📧" },
   { href: "/dashboard/containers", label: "Containers", icon: "▣" },
   { href: "/dashboard/store", label: "Store", icon: "✦" },
   { href: "/dashboard/terminal", label: "Terminal", icon: "▶" },
