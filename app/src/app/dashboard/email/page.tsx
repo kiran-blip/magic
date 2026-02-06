@@ -206,6 +206,18 @@ export default function EmailPage() {
         </div>
         <div className="flex gap-2">
           <button
+            onClick={async () => {
+              if (confirm("Disconnect Gmail?")) {
+                await fetch("/api/email/auth/disconnect", { method: "POST" });
+                setAuthenticated(false);
+                setEmails([]);
+              }
+            }}
+            className="px-3 py-2 rounded-lg text-xs bg-card border border-border text-muted hover:text-danger hover:border-danger/30 transition-colors"
+          >
+            Disconnect
+          </button>
+          <button
             onClick={() => setView("inbox")}
             className={`px-4 py-2 rounded-lg text-sm transition-colors ${
               view === "inbox"

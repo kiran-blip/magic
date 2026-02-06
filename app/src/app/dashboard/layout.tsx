@@ -16,7 +16,7 @@ const services = [
   { href: "/dashboard/scraper", label: "Scraper", icon: "🕷️", coming: true },
   { href: "/dashboard/agent", label: "AI Agent", icon: "🤖", coming: true },
   { href: "/dashboard/files", label: "Files", icon: "📁", coming: true },
-];
+] as const;
 
 const systemNav = [
   { href: "/dashboard/terminal", label: "Terminal", icon: "▶" },
@@ -67,30 +67,24 @@ export default function DashboardLayout({
     coming?: boolean;
   }) {
     const active = pathname === href;
-    if (coming) {
-      return (
-        <div
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted/40 cursor-default"
-        >
-          <span className="text-base flex-shrink-0 opacity-50">{icon}</span>
-          <span>{label}</span>
-          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-border/50 text-muted/50">
-            soon
-          </span>
-        </div>
-      );
-    }
     return (
       <Link
         href={href}
         className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
           active
             ? "bg-accent/10 text-accent border border-accent/20"
-            : "text-muted hover:text-foreground hover:bg-card-hover"
+            : coming
+              ? "text-muted/50 hover:text-muted hover:bg-card-hover"
+              : "text-muted hover:text-foreground hover:bg-card-hover"
         }`}
       >
-        <span className="text-base flex-shrink-0">{icon}</span>
+        <span className={`text-base flex-shrink-0 ${coming ? "opacity-50" : ""}`}>{icon}</span>
         <span>{label}</span>
+        {coming && (
+          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-border/50 text-muted/50">
+            soon
+          </span>
+        )}
       </Link>
     );
   }

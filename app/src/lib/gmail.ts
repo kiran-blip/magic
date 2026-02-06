@@ -1,5 +1,7 @@
 import { google, gmail_v1 } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "fs";
+import { join } from "path";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
@@ -7,6 +9,9 @@ const SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/gmail.labels",
 ];
+
+const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), ".magic-data");
+const TOKEN_PATH = join(DATA_DIR, "gmail-tokens.json");
 
 function getOAuthClient(): OAuth2Client {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -22,12 +27,32 @@ function getOAuthClient(): OAuth2Client {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
-// Token storage (in production, use a database)
-let storedTokens: {
+// Persist tokens to disk so they survive redeploys
+interface StoredTokens {
   access_token: string;
   refresh_token: string;
   expiry_date: number;
-} | null = null;
+}
+
+function loadTokens(): StoredTokens | null {
+  try {
+    if (existsSync(TOKEN_PATH)) {
+      return JSON.parse(readFileSync(TOKEN_PATH, "utf-8"));
+    }
+  } catch {}
+  return null;
+}
+
+function saveTokens(tokens: StoredTokens) {
+  mkdirSync(DATA_DIR, { recursive: true });
+  writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
+}
+
+function deleteTokens() {
+  try {
+    if (existsSync(TOKEN_PATH)) unlinkSync(TOKEN_PATH);
+  } catch {}
+}
 
 export function getAuthUrl(): string {
   const client = getOAuthClient();
@@ -41,24 +66,31 @@ export function getAuthUrl(): string {
 export async function handleAuthCallback(code: string) {
   const client = getOAuthClient();
   const { tokens } = await client.getToken(code);
-  storedTokens = {
+  const stored: StoredTokens = {
     access_token: tokens.access_token || "",
     refresh_token: tokens.refresh_token || "",
     expiry_date: tokens.expiry_date || 0,
   };
+  saveTokens(stored);
   return tokens;
 }
 
 export function isAuthenticated(): boolean {
-  return storedTokens !== null && !!storedTokens.refresh_token;
+  const tokens = loadTokens();
+  return tokens !== null && !!tokens.refresh_token;
+}
+
+export function disconnectGmail(): void {
+  deleteTokens();
 }
 
 function getAuthedClient(): gmail_v1.Gmail {
-  if (!storedTokens) {
+  const tokens = loadTokens();
+  if (!tokens) {
     throw new Error("Not authenticated with Gmail");
   }
   const client = getOAuthClient();
-  client.setCredentials(storedTokens);
+  client.setCredentials(tokens);
   return google.gmail({ version: "v1", auth: client });
 }
 

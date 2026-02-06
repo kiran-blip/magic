@@ -3,28 +3,70 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-interface Container {
-  id: string;
-  name: string;
-  type: string;
-  status: string;
-  created: string;
-}
-
 export default function DashboardPage() {
-  const [containers, setContainers] = useState<Container[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [gmailConnected, setGmailConnected] = useState(false);
 
   useEffect(() => {
-    fetch("/api/containers")
+    fetch("/api/email/auth")
       .then((res) => res.json())
-      .then((data) => setContainers(data.containers || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .then((data) => setGmailConnected(data.authenticated || false))
+      .catch(() => {});
   }, []);
 
-  const running = containers.filter((c) => c.status === "running").length;
-  const stopped = containers.filter((c) => c.status !== "running").length;
+  const services = [
+    {
+      href: "/dashboard/email",
+      icon: "📧",
+      name: "Email",
+      description: "AI-powered inbox management with Claude",
+      status: gmailConnected ? "connected" : "not connected",
+      active: true,
+    },
+    {
+      href: "/dashboard/crypto",
+      icon: "🪙",
+      name: "Crypto",
+      description: "Portfolio tracking and DeFi monitoring",
+      status: "coming soon",
+      active: false,
+    },
+    {
+      href: "/dashboard/dev",
+      icon: "💻",
+      name: "Dev",
+      description: "Development environment with AI assistant",
+      status: "coming soon",
+      active: false,
+    },
+    {
+      href: "/dashboard/scraper",
+      icon: "🕷️",
+      name: "Scraper",
+      description: "Web scraping with AI data extraction",
+      status: "coming soon",
+      active: false,
+    },
+    {
+      href: "/dashboard/agent",
+      icon: "🤖",
+      name: "AI Agent",
+      description: "Autonomous task execution with OpenClaw",
+      status: "coming soon",
+      active: false,
+    },
+    {
+      href: "/dashboard/files",
+      icon: "📁",
+      name: "Files",
+      description: "Cloud storage with AI search",
+      status: "coming soon",
+      active: false,
+    },
+  ];
+
+  const activeCount = services.filter(
+    (s) => s.status === "connected"
+  ).length;
 
   return (
     <div>
@@ -38,29 +80,97 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Containers" value={containers.length} icon="▣" />
-        <StatCard label="Running" value={running} icon="▶" color="success" />
-        <StatCard label="Stopped" value={stopped} icon="■" color="warning" />
-        <StatCard label="Available Templates" value={8} icon="✦" color="accent" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-muted text-sm">Services</span>
+            <span className="text-lg">✦</span>
+          </div>
+          <div className="text-3xl font-bold text-foreground">
+            {services.length}
+          </div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-muted text-sm">Connected</span>
+            <span className="text-lg">▶</span>
+          </div>
+          <div className="text-3xl font-bold text-success">{activeCount}</div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-muted text-sm">Coming Soon</span>
+            <span className="text-lg">◆</span>
+          </div>
+          <div className="text-3xl font-bold text-accent">
+            {services.filter((s) => s.status === "coming soon").length}
+          </div>
+        </div>
+      </div>
+
+      {/* Services */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-foreground mb-4">
+          Your Services
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {services.map((service) => (
+            <Link
+              key={service.href}
+              href={service.active ? service.href : "#"}
+              className={`bg-card border border-border rounded-xl p-5 transition-all group ${
+                service.active
+                  ? "hover:border-accent/40 hover:bg-card-hover cursor-pointer"
+                  : "opacity-50 cursor-default"
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <span className="text-2xl">{service.icon}</span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    service.status === "connected"
+                      ? "bg-success/10 text-success border border-success/20"
+                      : service.status === "not connected"
+                      ? "bg-warning/10 text-warning border border-warning/20"
+                      : "bg-border/50 text-muted/60"
+                  }`}
+                >
+                  {service.status}
+                </span>
+              </div>
+              <h3
+                className={`font-medium transition-colors ${
+                  service.active
+                    ? "text-foreground group-hover:text-accent"
+                    : "text-muted"
+                }`}
+              >
+                {service.name}
+              </h3>
+              <p className="text-sm text-muted mt-1">{service.description}</p>
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* Quick Actions */}
-      <div className="mb-8">
+      <div>
         <h2 className="text-lg font-semibold text-foreground mb-4">
           Quick Actions
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Link
-            href="/dashboard/store"
+            href="/dashboard/email"
             className="bg-card border border-border rounded-xl p-5 hover:border-accent/40 hover:bg-card-hover transition-all group"
           >
-            <div className="text-2xl mb-3">✦</div>
+            <div className="text-2xl mb-3">📧</div>
             <h3 className="font-medium text-foreground group-hover:text-accent transition-colors">
-              Deploy a Container
+              {gmailConnected ? "Open Email" : "Connect Gmail"}
             </h3>
             <p className="text-sm text-muted mt-1">
-              Browse templates and launch a new workspace
+              {gmailConnected
+                ? "Manage your inbox with AI"
+                : "Connect your Gmail to get started"}
             </p>
           </Link>
           <Link
@@ -75,103 +185,8 @@ export default function DashboardPage() {
               Access your server&apos;s command line
             </p>
           </Link>
-          <Link
-            href="/dashboard/containers"
-            className="bg-card border border-border rounded-xl p-5 hover:border-accent/40 hover:bg-card-hover transition-all group"
-          >
-            <div className="text-2xl mb-3">▣</div>
-            <h3 className="font-medium text-foreground group-hover:text-accent transition-colors">
-              Manage Containers
-            </h3>
-            <p className="text-sm text-muted mt-1">
-              Start, stop, and monitor your workspaces
-            </p>
-          </Link>
         </div>
       </div>
-
-      {/* Running Containers */}
-      <div>
-        <h2 className="text-lg font-semibold text-foreground mb-4">
-          Active Containers
-        </h2>
-        {loading ? (
-          <div className="bg-card border border-border rounded-xl p-8 text-center text-muted">
-            Loading containers...
-          </div>
-        ) : containers.filter((c) => c.status === "running").length === 0 ? (
-          <div className="bg-card border border-border rounded-xl p-8 text-center">
-            <div className="text-3xl mb-3">🚀</div>
-            <p className="text-muted">No containers running yet.</p>
-            <Link
-              href="/dashboard/store"
-              className="inline-block mt-3 text-sm text-accent hover:text-accent-hover transition-colors"
-            >
-              Deploy your first container →
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {containers
-              .filter((c) => c.status === "running")
-              .map((container) => (
-                <div
-                  key={container.id}
-                  className="bg-card border border-border rounded-xl p-4 flex items-center justify-between hover:border-accent/20 transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-2 h-2 rounded-full bg-success animate-pulse-dot" />
-                    <div>
-                      <div className="font-medium text-foreground">
-                        {container.name}
-                      </div>
-                      <div className="text-xs text-muted">
-                        {container.type} · {container.id}
-                      </div>
-                    </div>
-                  </div>
-                  <Link
-                    href={`/dashboard/containers`}
-                    className="text-sm text-accent hover:text-accent-hover transition-colors"
-                  >
-                    Manage →
-                  </Link>
-                </div>
-              ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  icon,
-  color = "foreground",
-}: {
-  label: string;
-  value: number;
-  icon: string;
-  color?: string;
-}) {
-  const colorClass =
-    color === "success"
-      ? "text-success"
-      : color === "warning"
-      ? "text-warning"
-      : color === "accent"
-      ? "text-accent"
-      : "text-foreground";
-
-  return (
-    <div className="bg-card border border-border rounded-xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-muted text-sm">{label}</span>
-        <span className="text-lg">{icon}</span>
-      </div>
-      <div className={`text-3xl font-bold ${colorClass}`}>{value}</div>
     </div>
   );
 }
