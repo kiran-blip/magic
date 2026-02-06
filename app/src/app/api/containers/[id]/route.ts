@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import {
-  stopContainer,
-  startContainer,
-  removeContainer,
-  getContainerLogs,
-  execInContainer,
-} from "@/lib/docker";
+  startWorkspace,
+  stopWorkspace,
+  removeWorkspace,
+  getWorkspaceLogs,
+  execInWorkspace,
+} from "@/lib/workspaces";
 
 function authenticate(req: NextRequest) {
   const token = req.cookies.get("magic-token")?.value;
@@ -28,16 +28,16 @@ export async function POST(
   try {
     switch (action) {
       case "start":
-        await startContainer(id);
+        startWorkspace(id);
         return NextResponse.json({ success: true });
       case "stop":
-        await stopContainer(id);
+        stopWorkspace(id);
         return NextResponse.json({ success: true });
       case "remove":
-        await removeContainer(id);
+        removeWorkspace(id);
         return NextResponse.json({ success: true });
       case "logs":
-        const logs = await getContainerLogs(id);
+        const logs = getWorkspaceLogs(id);
         return NextResponse.json({ logs });
       case "exec":
         if (!command) {
@@ -46,11 +46,7 @@ export async function POST(
             { status: 400 }
           );
         }
-        const output = await execInContainer(id, [
-          "sh",
-          "-c",
-          command,
-        ]);
+        const output = await execInWorkspace(id, command);
         return NextResponse.json({ output });
       default:
         return NextResponse.json(
@@ -77,7 +73,7 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    await removeContainer(id);
+    removeWorkspace(id);
     return NextResponse.json({ success: true });
   } catch (err: any) {
     return NextResponse.json(

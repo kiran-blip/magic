@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.openclaw.ai)",
+      "WebFetch(domain:docs.orgo.ai)",
+      "WebFetch(domain:www.zo.computer)",
+      "WebFetch(domain:www.orgo.ai)",
+      "Bash(npx create-next-app:*)",
+      "Bash(node --version:*)",
+      "Bash(npm --version:*)",
+      "Bash(export PATH=\"/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH\")",
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npm install:*)"
+    ]
+  }
+}

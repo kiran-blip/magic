@@ -168,13 +168,13 @@ export default function StorePage() {
         ))}
       </div>
 
-      {/* Custom container */}
+      {/* Custom workspace */}
       <div className="mt-8 bg-card border border-border rounded-xl p-6">
         <h3 className="text-lg font-semibold text-foreground mb-2">
-          Custom Container
+          Custom Workspace
         </h3>
         <p className="text-sm text-muted mb-4">
-          Deploy any Docker image as a Magic Container.
+          Create a blank workspace for any task.
         </p>
         <CustomDeploy />
       </div>
@@ -184,12 +184,11 @@ export default function StorePage() {
 
 function CustomDeploy() {
   const [name, setName] = useState("");
-  const [image, setImage] = useState("");
   const [deploying, setDeploying] = useState(false);
   const [result, setResult] = useState("");
 
   async function handleDeploy() {
-    if (!image.trim()) return;
+    if (!name.trim()) return;
     setDeploying(true);
     setResult("");
 
@@ -197,10 +196,7 @@ function CustomDeploy() {
       const res = await fetch("/api/containers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name || "custom",
-          customImage: image,
-        }),
+        body: JSON.stringify({ name }),
       });
       const data = await res.json();
       setResult(
@@ -221,19 +217,12 @@ function CustomDeploy() {
         type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="Container name"
+        placeholder="Workspace name"
         className="bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent flex-1"
-      />
-      <input
-        type="text"
-        value={image}
-        onChange={(e) => setImage(e.target.value)}
-        placeholder="Docker image (e.g. ubuntu:latest)"
-        className="bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent flex-[2]"
       />
       <button
         onClick={handleDeploy}
-        disabled={deploying || !image.trim()}
+        disabled={deploying || !name.trim()}
         className="px-6 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm transition-colors disabled:opacity-50"
       >
         {deploying ? "Deploying..." : "Deploy"}

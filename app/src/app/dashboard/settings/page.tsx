@@ -75,9 +75,9 @@ export default function SettingsPage() {
           </p>
 
           <div className="space-y-3">
-            <InfoRow label="Platform" value="Docker (Local)" />
-            <InfoRow label="Storage" value="Host filesystem" />
-            <InfoRow label="Network" value="Bridge (magic-network)" />
+            <InfoRow label="Platform" value="Railway" />
+            <InfoRow label="Storage" value="Server filesystem" />
+            <InfoRow label="Workspaces" value="Process-based" />
             <InfoRow label="Status" value="Running" valueColor="text-success" />
           </div>
         </div>
@@ -93,10 +93,10 @@ export default function SettingsPage() {
 
           <div className="flex gap-3">
             <button className="px-4 py-2.5 bg-accent/10 text-accent border border-accent/20 rounded-lg text-sm hover:bg-accent hover:text-white transition-all">
-              Export Docker Compose
+              Export Config
             </button>
             <button className="px-4 py-2.5 bg-card border border-border rounded-lg text-sm text-muted hover:text-foreground transition-colors">
-              Backup All Volumes
+              Backup Workspaces
             </button>
           </div>
         </div>

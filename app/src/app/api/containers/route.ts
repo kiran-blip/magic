@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import {
-  listContainers,
-  createContainer,
-} from "@/lib/docker";
+  listWorkspaces,
+  createWorkspace,
+  startWorkspace,
+} from "@/lib/workspaces";
 import { getTemplate } from "@/lib/templates";
 
 function authenticate(req: NextRequest) {
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const containers = await listContainers();
+  const containers = listWorkspaces();
   return NextResponse.json({ containers });
 }
 
@@ -27,11 +28,9 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { templateId, name, customImage, env, ports } = body;
+  const { templateId, name } = body;
 
   try {
-    let containerId: string;
-
     if (templateId) {
       const template = getTemplate(templateId);
       if (!template) {
@@ -40,27 +39,21 @@ export async function POST(req: NextRequest) {
           { status: 404 }
         );
       }
-      containerId = await createContainer(
+      const workspace = createWorkspace(
         name || template.id,
         template.id,
-        template.image,
-        [...template.env, ...(env || [])],
-        template.ports
+        template.features
       );
+      startWorkspace(workspace.id);
+      return NextResponse.json({ id: workspace.id, success: true });
     } else {
-      containerId = await createContainer(
-        name || "custom",
-        "custom",
-        customImage || "ubuntu:latest",
-        env || [],
-        ports || {}
-      );
+      const workspace = createWorkspace(name || "custom", "custom", []);
+      startWorkspace(workspace.id);
+      return NextResponse.json({ id: workspace.id, success: true });
     }
-
-    return NextResponse.json({ id: containerId, success: true });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err.message || "Failed to create container" },
+      { error: err.message || "Failed to create workspace" },
       { status: 500 }
     );
   }
