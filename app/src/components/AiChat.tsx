@@ -28,10 +28,10 @@ export default function AiChat() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/ai/chat", {
+      const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg }),
+        body: JSON.stringify({ message: userMsg, history: messages.slice(-10) }),
       });
       const data = await res.json();
       setMessages((prev) => [

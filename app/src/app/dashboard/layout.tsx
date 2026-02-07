@@ -14,7 +14,7 @@ const services = [
   { href: "/dashboard/crypto", label: "Crypto", icon: "🪙", coming: true },
   { href: "/dashboard/dev", label: "Dev", icon: "💻", coming: true },
   { href: "/dashboard/scraper", label: "Scraper", icon: "🕷️", coming: true },
-  { href: "/dashboard/agent", label: "AI Agent", icon: "🤖", coming: true },
+  { href: "/dashboard/agent", label: "AI Agent", icon: "🤖" },
   { href: "/dashboard/files", label: "Files", icon: "📁", coming: true },
 ] as const;
 
