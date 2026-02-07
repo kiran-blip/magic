@@ -10,6 +10,7 @@ const mainNav = [
 ];
 
 const services = [
+  { href: "/dashboard/gold-digger", label: "Gold Digger", icon: "⛏️" },
   { href: "/dashboard/email", label: "Email", icon: "📧" },
   { href: "/dashboard/crypto", label: "Crypto", icon: "🪙", coming: true },
   { href: "/dashboard/dev", label: "Dev", icon: "💻", coming: true },

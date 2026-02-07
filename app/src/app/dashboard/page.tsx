@@ -15,6 +15,14 @@ export default function DashboardPage() {
 
   const services = [
     {
+      href: "/dashboard/gold-digger",
+      icon: "⛏️",
+      name: "Gold Digger",
+      description: "AI-powered investment analysis and market research",
+      status: "connected",
+      active: true,
+    },
+    {
       href: "/dashboard/email",
       icon: "📧",
       name: "Email",
