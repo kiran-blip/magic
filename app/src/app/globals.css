@@ -66,3 +66,55 @@ body {
 .animate-pulse-dot {
   animation: pulse-dot 2s ease-in-out infinite;
 }
+
+/* Landing page */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes glow-breathe {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.08); }
+}
+@keyframes orbit {
+  from { transform: rotate(0deg) translateX(160px) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(160px) rotate(-360deg); }
+}
+@keyframes orbit-2 {
+  from { transform: rotate(120deg) translateX(120px) rotate(-120deg); }
+  to { transform: rotate(480deg) translateX(120px) rotate(-480deg); }
+}
+@keyframes orbit-3 {
+  from { transform: rotate(240deg) translateX(190px) rotate(-240deg); }
+  to { transform: rotate(600deg) translateX(190px) rotate(-600deg); }
+}
+.animate-float { animation: float 5s ease-in-out infinite; }
+.animate-float-slow { animation: float-slow 7s ease-in-out infinite; }
+.animate-fade-up { animation: fade-up 0.8s ease-out both; }
+.animate-shimmer {
+  background-size: 200% auto;
+  animation: shimmer 3s linear infinite;
+}
+.animate-glow-breathe { animation: glow-breathe 4s ease-in-out infinite; }
+.animate-orbit { animation: orbit 25s linear infinite; }
+.animate-orbit-2 { animation: orbit-2 20s linear infinite; }
+.animate-orbit-3 { animation: orbit-3 30s linear infinite; }
+
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-400 { animation-delay: 0.4s; }
+.delay-500 { animation-delay: 0.5s; }
+.delay-700 { animation-delay: 0.7s; }
