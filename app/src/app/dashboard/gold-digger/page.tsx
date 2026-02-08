@@ -199,14 +199,18 @@ const MODE_CONFIG: Record<
   },
 };
 
-const LOADING_STAGES = [
+// Mutable — streaming updates these labels in real-time
+const LOADING_STAGES: string[] = [
+  "Starting...",
+  "Scanning memory...",
   "Routing query...",
-  "Safety check...",
+  "Processing...",
   "Fetching market data...",
   "Analyzing fundamentals...",
   "Running technicals...",
   "Reading sentiment...",
   "Generating recommendation...",
+  "Saving to memory...",
 ];
 
 export default function GoldDiggerPage() {
@@ -221,9 +225,10 @@ export default function GoldDiggerPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [alerts, setAlerts] = useState<Array<{ id: string; type: string; severity: string; title: string; message: string; actionUrl?: string }>>([]);
+  const [alertsDismissed, setAlertsDismissed] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const loadingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check setup status + health
   useEffect(() => {
@@ -236,6 +241,12 @@ export default function GoldDiggerPage() {
       .then((r) => r.json())
       .then((d) => setSetupComplete(d.setupComplete ?? false))
       .catch(() => setSetupComplete(false));
+
+    // Load proactive alerts (non-blocking)
+    fetch("/api/jarvis/alerts")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.alerts) setAlerts(d.alerts); })
+      .catch(() => { /* alerts are non-critical */ });
   }, []);
 
   // Load conversation history
@@ -254,21 +265,7 @@ export default function GoldDiggerPage() {
     }
   }, []);
 
-  // Animated loading stages
-  useEffect(() => {
-    if (loading) {
-      setLoadingStage(0);
-      loadingTimerRef.current = setInterval(() => {
-        setLoadingStage((prev) => Math.min(prev + 1, LOADING_STAGES.length - 1));
-      }, 2500);
-    } else {
-      if (loadingTimerRef.current) clearInterval(loadingTimerRef.current);
-      setLoadingStage(0);
-    }
-    return () => {
-      if (loadingTimerRef.current) clearInterval(loadingTimerRef.current);
-    };
-  }, [loading]);
+  // No longer needed — streaming provides real stage updates
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -285,57 +282,118 @@ export default function GoldDiggerPage() {
     }
     setMessages((prev: Message[]) => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
+    setLoadingStage(0);
 
     try {
-      const res = await fetch("/api/jarvis/chat", {
+      const res = await fetch("/api/jarvis/chat-stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMsg,
           history: messages.slice(-10),
-          // Send the selected mode so the backend skips routing
           ...(mode !== "auto" && { agentType: mode }),
         }),
       });
 
-      // Safe JSON parse — server might return HTML error page
-      let data: Record<string, unknown>;
-      try {
-        data = await res.json();
-      } catch {
-        setMessages((prev: Message[]) => [
-          ...prev,
-          { role: "assistant", content: "Received an unexpected response from the server. Please try again." },
-        ]);
-        return;
-      }
-
-      if (!res.ok && res.status === 401) {
-        setMessages((prev: Message[]) => [
-          ...prev,
-          { role: "assistant", content: "Session expired. Please refresh the page and log in again." },
-        ]);
-      } else if (!res.ok && res.status === 400) {
-        setMessages((prev: Message[]) => [
-          ...prev,
-          { role: "assistant", content: (data.error as string) || "Invalid request. Please check your message." },
-        ]);
-      } else {
-        const reply = typeof data.reply === "string" ? data.reply : "No response.";
-        const agentType = typeof data.agentType === "string" ? data.agentType : undefined;
-        const governance = data.governance as Record<string, unknown> | null;
-        const isBlocked = data.source === "blocked" || governance?.approved === false;
-
+      if (!res.ok || !res.body) {
+        // Fallback: try non-streaming endpoint
+        const fallbackRes = await fetch("/api/jarvis/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: userMsg,
+            history: messages.slice(-10),
+            ...(mode !== "auto" && { agentType: mode }),
+          }),
+        });
+        const data = await fallbackRes.json();
         setMessages((prev: Message[]) => [
           ...prev,
           {
             role: "assistant",
-            content: reply,
-            agentType,
-            blocked: isBlocked,
-            blockReason: typeof governance?.blockReason === "string" ? governance.blockReason : undefined,
+            content: data.reply ?? "No response.",
+            agentType: data.agentType,
           },
         ]);
+        setLoading(false);
+        return;
+      }
+
+      // Parse SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let stageIndex = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE events from buffer
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? ""; // Keep incomplete event in buffer
+
+        for (const event of events) {
+          if (!event.trim()) continue;
+
+          const eventMatch = event.match(/^event: (.+)$/m);
+          const dataMatch = event.match(/^data: (.+)$/m);
+
+          if (!eventMatch || !dataMatch) continue;
+
+          const eventType = eventMatch[1];
+          let eventData: Record<string, unknown>;
+          try {
+            eventData = JSON.parse(dataMatch[1]);
+          } catch {
+            continue;
+          }
+
+          switch (eventType) {
+            case "stage":
+              // Update loading stage label in real-time
+              stageIndex++;
+              setLoadingStage(stageIndex);
+              // Dynamically update stage text
+              if (typeof eventData.label === "string") {
+                LOADING_STAGES[stageIndex] = eventData.label;
+              }
+              break;
+
+            case "response": {
+              const reply = typeof eventData.reply === "string" ? eventData.reply : "No response.";
+              const agentType = typeof eventData.agentType === "string" ? eventData.agentType : undefined;
+              const governance = eventData.governance as Record<string, unknown> | null;
+              const isBlocked = eventData.source === "blocked" || governance?.approved === false;
+
+              setMessages((prev: Message[]) => [
+                ...prev,
+                {
+                  role: "assistant",
+                  content: reply,
+                  agentType,
+                  blocked: isBlocked,
+                  blockReason: typeof governance?.blockReason === "string" ? governance.blockReason : undefined,
+                },
+              ]);
+              break;
+            }
+
+            case "error": {
+              const errReply = typeof eventData.reply === "string" ? eventData.reply : "Something went wrong.";
+              setMessages((prev: Message[]) => [
+                ...prev,
+                { role: "assistant", content: errReply },
+              ]);
+              break;
+            }
+
+            case "done":
+              break;
+          }
+        }
       }
     } catch {
       setMessages((prev: Message[]) => [
@@ -344,6 +402,7 @@ export default function GoldDiggerPage() {
       ]);
     } finally {
       setLoading(false);
+      setLoadingStage(0);
     }
   }
 
@@ -390,6 +449,50 @@ export default function GoldDiggerPage() {
         </div>
       )}
 
+      {/* Proactive alerts banner */}
+      {alerts.filter((a) => !alertsDismissed.has(a.id) && (a.severity === "urgent" || a.severity === "warning")).slice(0, 3).length > 0 && (
+        <div className="space-y-2 mb-2">
+          {alerts.filter((a) => !alertsDismissed.has(a.id) && (a.severity === "urgent" || a.severity === "warning")).slice(0, 3).map((alert) => (
+            <div
+              key={alert.id}
+              className={`flex items-center justify-between rounded-xl p-3 border text-sm ${
+                alert.severity === "urgent"
+                  ? "bg-red-500/10 border-red-500/20"
+                  : "bg-yellow-500/10 border-yellow-500/20"
+              }`}
+            >
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className={`text-xs px-1.5 py-0.5 rounded ${
+                  alert.severity === "urgent" ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400"
+                }`}>
+                  {alert.severity === "urgent" ? "ALERT" : "NOTICE"}
+                </span>
+                <span className="text-xs text-foreground font-medium truncate">{alert.title}</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {alert.actionUrl && (
+                  <button
+                    onClick={() => {
+                      const q = new URL(alert.actionUrl!, window.location.origin).searchParams.get("q");
+                      if (q) { setInput(q); inputRef.current?.focus(); }
+                    }}
+                    className="text-[10px] text-accent hover:text-accent-hover transition-colors"
+                  >
+                    Investigate
+                  </button>
+                )}
+                <button
+                  onClick={() => setAlertsDismissed((prev) => new Set([...prev, alert.id]))}
+                  className="text-muted/40 hover:text-muted text-sm leading-none"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -433,6 +536,27 @@ export default function GoldDiggerPage() {
               <polyline points="12 6 12 12 16 14" />
             </svg>
           </button>
+          <Link
+            href="/dashboard/gold-digger/watchlist"
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-card border border-border text-muted hover:text-foreground hover:border-accent/40 transition-colors"
+            title="Watchlist"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </Link>
+          <Link
+            href="/dashboard/gold-digger/portfolio"
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-card border border-border text-muted hover:text-foreground hover:border-accent/40 transition-colors"
+            title="Portfolio Tracker"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+          </Link>
           <Link
             href="/dashboard/gold-digger/settings"
             className="w-8 h-8 flex items-center justify-center rounded-lg bg-card border border-border text-muted hover:text-foreground hover:border-accent/40 transition-colors"

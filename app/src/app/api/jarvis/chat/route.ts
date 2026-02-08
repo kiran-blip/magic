@@ -12,6 +12,7 @@ import { verifyToken } from "@/lib/auth";
 import { runJarvis } from "@/lib/jarvis";
 import {
   storeConversation,
+  storeInvestmentDecision,
   recallRelevant,
   recallInvestmentHistory,
   generateTags,
@@ -123,6 +124,40 @@ export async function POST(req: NextRequest) {
         symbols: tags.filter((t) => /^[A-Z]{1,5}$/.test(t)),
         tags,
       });
+
+      // Extract structured investment decisions from investment agent responses
+      if (result.agentType === "investment" && responseText.length > 50) {
+        try {
+          const actionMatch = responseText.match(/\*\*([A-Z]+)\s+([A-Z]{1,5})\*\*/);
+          const confidenceMatch = responseText.match(/Confidence:\s*(\d+)%/);
+          const entryMatch = responseText.match(/Entry:\s*\$?([\d,.]+)/);
+          const stopMatch = responseText.match(/Stop Loss:\s*\$?([\d,.]+)/);
+          const profitMatch = responseText.match(/Take Profit:\s*\$?([\d,.]+)/);
+          const signalMatch = responseText.match(/\*\*SIGNAL:\*\*\s*(.+?)(?:\n|$)/);
+
+          if (actionMatch && actionMatch[1] && actionMatch[2]) {
+            const action = actionMatch[1]; // BUY, SELL, HOLD, AVOID
+            const symbol = actionMatch[2];
+            const confidence = confidenceMatch ? parseInt(confidenceMatch[1], 10) : 50;
+            const parseNum = (m: RegExpMatchArray | null) =>
+              m ? parseFloat(m[1].replace(/,/g, "")) : undefined;
+
+            storeInvestmentDecision({
+              timestamp: new Date().toISOString(),
+              symbol,
+              action,
+              confidence,
+              reasoning: signalMatch?.[1]?.slice(0, 200) ?? responseText.slice(0, 200),
+              entryPrice: parseNum(entryMatch),
+              stopLoss: parseNum(stopMatch),
+              takeProfit: parseNum(profitMatch),
+            });
+            console.log(`[JARVIS Memory] Stored investment decision: ${action} ${symbol} @ ${confidence}%`);
+          }
+        } catch {
+          // Investment extraction is best-effort
+        }
+      }
     } catch (err) {
       // Memory storage is non-critical — don't fail the response
       console.warn("[JARVIS Memory] Store failed:", err);

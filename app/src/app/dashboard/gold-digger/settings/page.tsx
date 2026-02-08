@@ -4,6 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
+interface UserProfile {
+  riskTolerance: "conservative" | "moderate" | "aggressive";
+  capitalRange: "under_5k" | "5k_50k" | "50k_500k" | "over_500k";
+  focusAreas: Array<"stocks" | "crypto" | "business" | "real_estate" | "all">;
+  experienceLevel: "beginner" | "intermediate" | "advanced";
+}
+
 interface PublicConfig {
   setupComplete: boolean;
   hasAnthropicKey: boolean;
@@ -17,6 +24,7 @@ interface PublicConfig {
     enableSafetyGovernor: boolean;
     enablePersonality: boolean;
   };
+  userProfile?: UserProfile;
   createdAt: string;
   updatedAt: string;
   envOnly: boolean;
@@ -34,6 +42,27 @@ export default function GoldDiggerSettings() {
   const [enableDisclaimers, setEnableDisclaimers] = useState(true);
   const [enableSafety, setEnableSafety] = useState(true);
   const [enablePersonality, setEnablePersonality] = useState(true);
+
+  // Investor profile
+  const [riskTolerance, setRiskTolerance] = useState<UserProfile["riskTolerance"]>("moderate");
+  const [capitalRange, setCapitalRange] = useState<UserProfile["capitalRange"]>("5k_50k");
+  const [focusAreas, setFocusAreas] = useState<UserProfile["focusAreas"]>(["stocks"]);
+  const [experienceLevel, setExperienceLevel] = useState<UserProfile["experienceLevel"]>("beginner");
+
+  function toggleFocusArea(area: UserProfile["focusAreas"][number]) {
+    if (area === "all") {
+      setFocusAreas(["all"]);
+      return;
+    }
+    setFocusAreas((prev) => {
+      const without = prev.filter((a) => a !== "all");
+      if (without.includes(area)) {
+        const result = without.filter((a) => a !== area);
+        return result.length === 0 ? ["stocks"] : result;
+      }
+      return [...without, area];
+    });
+  }
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -53,6 +82,13 @@ export default function GoldDiggerSettings() {
           setEnableDisclaimers(data.preferences?.enableDisclaimers ?? true);
           setEnableSafety(data.preferences?.enableSafetyGovernor ?? true);
           setEnablePersonality(data.preferences?.enablePersonality ?? true);
+          // Load investor profile
+          if (data.userProfile) {
+            setRiskTolerance(data.userProfile.riskTolerance ?? "moderate");
+            setCapitalRange(data.userProfile.capitalRange ?? "5k_50k");
+            setFocusAreas(data.userProfile.focusAreas ?? ["stocks"]);
+            setExperienceLevel(data.userProfile.experienceLevel ?? "beginner");
+          }
         }
       } catch {
         setError("Failed to load settings");
@@ -77,6 +113,12 @@ export default function GoldDiggerSettings() {
           enableDisclaimers,
           enableSafetyGovernor: enableSafety,
           enablePersonality,
+        },
+        userProfile: {
+          riskTolerance,
+          capitalRange,
+          focusAreas,
+          experienceLevel,
         },
       };
 
@@ -264,6 +306,112 @@ export default function GoldDiggerSettings() {
             </button>
           </div>
         ))}
+      </div>
+
+      {/* Investor Profile */}
+      <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+        <div>
+          <div className="text-sm font-medium text-foreground">Investor Profile</div>
+          <p className="text-xs text-muted mt-0.5">These shape how Gold Digger AGI tailors its analysis and recommendations for you</p>
+        </div>
+
+        {/* Risk Tolerance */}
+        <div>
+          <div className="text-xs text-muted mb-2">Risk Tolerance</div>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { value: "conservative" as const, label: "Conservative", icon: "🛡️" },
+              { value: "moderate" as const, label: "Moderate", icon: "⚖️" },
+              { value: "aggressive" as const, label: "Aggressive", icon: "🚀" },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setRiskTolerance(opt.value)}
+                className={`px-3 py-2.5 rounded-lg border text-xs transition-colors ${
+                  riskTolerance === opt.value
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-background text-muted hover:border-accent/40 hover:text-foreground"
+                }`}
+              >
+                <span className="mr-1">{opt.icon}</span> {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Capital Range */}
+        <div>
+          <div className="text-xs text-muted mb-2">Investment Capital</div>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { value: "under_5k" as const, label: "Under $5K" },
+              { value: "5k_50k" as const, label: "$5K – $50K" },
+              { value: "50k_500k" as const, label: "$50K – $500K" },
+              { value: "over_500k" as const, label: "$500K+" },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setCapitalRange(opt.value)}
+                className={`px-3 py-2 rounded-lg border text-xs transition-colors ${
+                  capitalRange === opt.value
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-background text-muted hover:border-accent/40 hover:text-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Focus Areas */}
+        <div>
+          <div className="text-xs text-muted mb-2">Focus Areas <span className="text-muted/40">(multi-select)</span></div>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { value: "stocks" as const, label: "Stocks & ETFs" },
+              { value: "crypto" as const, label: "Crypto & Web3" },
+              { value: "business" as const, label: "Business & Side Income" },
+              { value: "real_estate" as const, label: "Real Estate" },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => toggleFocusArea(opt.value)}
+                className={`px-3 py-2 rounded-lg border text-xs transition-colors ${
+                  focusAreas.includes(opt.value) || focusAreas.includes("all")
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-background text-muted hover:border-accent/40 hover:text-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Experience Level */}
+        <div>
+          <div className="text-xs text-muted mb-2">Experience Level</div>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { value: "beginner" as const, label: "Beginner" },
+              { value: "intermediate" as const, label: "Intermediate" },
+              { value: "advanced" as const, label: "Advanced" },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setExperienceLevel(opt.value)}
+                className={`px-3 py-2 rounded-lg border text-xs transition-colors ${
+                  experienceLevel === opt.value
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-background text-muted hover:border-accent/40 hover:text-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Actions */}
