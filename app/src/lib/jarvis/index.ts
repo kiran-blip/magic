@@ -23,3 +23,12 @@ export {
   ModelTier,
   type LLMMessage,
 } from "./llm";
+export {
+  loadConfig,
+  saveConfig,
+  updateConfig,
+  getPublicConfig,
+  isSetupComplete,
+  type GoldDiggerConfig,
+  type GoldDiggerConfigPublic,
+} from "./config";

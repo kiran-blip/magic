@@ -2,11 +2,13 @@
  * Multi-tier LLM Router — routes tasks to the most cost-effective model.
  * Ported from jarvis-v4/src/llm/router.py + task_classifier.py
  *
- * Tier 1 (LIGHT)    → OpenRouter cheap model     ~$0.0001/call
- * Tier 2 (STANDARD) → OpenRouter mid-tier         ~$0.001/call
- * Tier 3 (PREMIUM)  → Anthropic Claude Sonnet     ~$0.01/call
+ * Tier 1 (LIGHT)    → Cheap fast model          ~$0.0001/call
+ * Tier 2 (STANDARD) → Mid-tier reasoning         ~$0.001/call
+ * Tier 3 (PREMIUM)  → Best available model        ~$0.003/call
  *
- * In Magic's context, we call the Anthropic SDK directly (no LangChain).
+ * OpenRouter-only: All tiers go through OpenRouter.
+ * Anthropic-only:  All tiers use Claude directly.
+ * Hybrid:          Light/Standard → OpenRouter, Premium → Anthropic.
  */
 
 // ── Model tiers ──────────────────────────────────────
@@ -18,10 +20,31 @@ export const ModelTier = {
 } as const;
 export type ModelTier = (typeof ModelTier)[keyof typeof ModelTier];
 
+/** Model names for Anthropic direct API. */
+const ANTHROPIC_MODELS: Record<ModelTier, string> = {
+  light: "claude-sonnet-4-20250514",
+  standard: "claude-sonnet-4-20250514",
+  premium: "claude-sonnet-4-20250514",
+};
+
+/**
+ * Default model names for OpenRouter API (requires provider/ prefix).
+ * Light = fast & cheap, Standard = mid-tier reasoning, Premium = best quality.
+ */
+const OPENROUTER_MODELS: Record<ModelTier, string> = {
+  light: "meta-llama/llama-3.1-8b-instruct",
+  standard: "meta-llama/llama-3.1-70b-instruct",
+  premium: "moonshotai/kimi-k2.5",
+};
+
+/**
+ * Default models used in config resolution.
+ * These are the defaults if no override is provided.
+ */
 const DEFAULT_MODELS: Record<ModelTier, string> = {
   light: "meta-llama/llama-3.1-8b-instruct",
   standard: "meta-llama/llama-3.1-70b-instruct",
-  premium: "claude-sonnet-4-20250514",
+  premium: "moonshotai/kimi-k2.5",
 };
 
 const TIER_FALLBACK_CHAIN: ModelTier[] = ["light", "standard", "premium"];
@@ -62,7 +85,7 @@ const TASK_TIER_MAP: Record<string, ModelTier> = {
 const ESTIMATED_COSTS: Record<ModelTier, number> = {
   light: 0.0001,
   standard: 0.001,
-  premium: 0.01,
+  premium: 0.003,
 };
 
 /** Get the recommended model tier for a task. */
@@ -126,6 +149,7 @@ export async function invoke(
 
   let currentTier = tier;
   const triedTiers: ModelTier[] = [];
+  let lastError: unknown;
 
   while (true) {
     triedTiers.push(currentTier);
@@ -146,17 +170,47 @@ export async function invoke(
         );
       }
     } catch (err) {
+      lastError = err;
       const tierIndex = TIER_FALLBACK_CHAIN.indexOf(currentTier);
-      if (tierIndex < TIER_FALLBACK_CHAIN.length - 1) {
+
+      // If not at the end of the chain, escalate to next tier
+      if (tierIndex >= 0 && tierIndex < TIER_FALLBACK_CHAIN.length - 1) {
         currentTier = TIER_FALLBACK_CHAIN[tierIndex + 1];
         console.warn(
-          `[JARVIS Router] ${triedTiers.at(-1)} failed, falling back to ${currentTier}`
+          `[Gold Digger Router] ${triedTiers.at(-1)} failed, falling back to ${currentTier}`
         );
-      } else {
-        throw new Error(
-          `All LLM tiers failed (tried: ${triedTiers.join(", ")}). Last error: ${err instanceof Error ? err.message : String(err)}`
-        );
+        continue;
       }
+
+      // If premium failed in hybrid mode, try OpenRouter as last resort
+      if (mode === "hybrid" && currentTier === "premium" && cfg.openrouterApiKey) {
+        try {
+          console.warn("[Gold Digger Router] Premium Anthropic failed, trying OpenRouter premium model");
+          return await callOpenRouter("premium", messages, systemPrompt, cfg);
+        } catch {
+          // Both failed
+        }
+      }
+
+      // If OpenRouter failed, try Anthropic as last resort
+      if (mode === "hybrid" && currentTier !== "premium" && cfg.anthropicApiKey) {
+        try {
+          console.warn("[Gold Digger Router] OpenRouter failed, trying Anthropic as fallback");
+          return await callAnthropic(messages, systemPrompt, cfg);
+        } catch {
+          // Both failed
+        }
+      }
+
+      const rawMsg = lastError instanceof Error ? lastError.message : String(lastError);
+      const userMsg = rawMsg.includes("abort") || rawMsg.includes("timeout")
+        ? "Request timed out — the AI model took too long to respond"
+        : rawMsg.includes("fetch failed")
+          ? "Could not connect to the AI service — check your internet connection and API keys"
+          : rawMsg;
+      throw new Error(
+        `All LLM tiers failed (tried: ${triedTiers.join(", ")}). ${userMsg}`
+      );
     }
   }
 }
@@ -172,8 +226,18 @@ async function callAnthropic(
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role, content: m.content }));
 
+  // Anthropic API doesn't use provider/ prefix — strip it if present
+  let model = cfg.models.premium;
+  if (model.includes("/")) {
+    model = model.split("/").pop() ?? model;
+  }
+  // If the model isn't a Claude model, fall back to the Anthropic default
+  if (!model.startsWith("claude-")) {
+    model = ANTHROPIC_MODELS.premium;
+  }
+
   const body: Record<string, unknown> = {
-    model: cfg.models.premium,
+    model,
     max_tokens: 4096,
     messages: apiMessages,
   };
@@ -217,7 +281,15 @@ async function callOpenRouter(
   systemPrompt: string | undefined,
   cfg: ResolvedConfig
 ): Promise<string> {
-  const model = cfg.models[tier];
+  // Resolve the model name for OpenRouter
+  let model = cfg.models[tier];
+
+  // If the model doesn't have a provider/ prefix, it needs one for OpenRouter
+  if (!model.includes("/")) {
+    model = OPENROUTER_MODELS[tier] ?? `anthropic/${model}`;
+  }
+
+  console.log(`[Gold Digger Router] OpenRouter call: tier=${tier}, model=${model}`);
 
   const apiMessages: LLMMessage[] = [];
   if (systemPrompt) {
@@ -230,7 +302,7 @@ async function callOpenRouter(
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${cfg.openrouterApiKey}`,
-      "HTTP-Referer": "https://jarvis-agi.local",
+      "HTTP-Referer": "https://gold-digger.app",
       "X-Title": "Gold Digger",
     },
     body: JSON.stringify({
@@ -238,7 +310,7 @@ async function callOpenRouter(
       messages: apiMessages,
       max_tokens: 4096,
     }),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(90_000),
   });
 
   if (!res.ok) {
@@ -247,7 +319,13 @@ async function callOpenRouter(
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  const content = data.choices?.[0]?.message?.content;
+
+  if (!content && data.error) {
+    throw new Error(`OpenRouter error: ${data.error.message ?? JSON.stringify(data.error)}`);
+  }
+
+  return content ?? "";
 }
 
 // ── Config resolution ────────────────────────────────
@@ -258,19 +336,46 @@ interface ResolvedConfig {
   models: Record<ModelTier, string>;
 }
 
+/**
+ * Resolve config by checking (in order):
+ *   1. Explicitly passed RouterConfig
+ *   2. Gold Digger config file (data/golddigger-config.json)
+ *   3. Environment variables
+ *   4. Defaults
+ */
 function resolveConfig(config?: RouterConfig): ResolvedConfig {
+  // Try to load from Gold Digger settings file
+  let savedAnthropicKey: string | undefined;
+  let savedOpenrouterKey: string | undefined;
+  let savedModels: Partial<Record<ModelTier, string>> | undefined;
+
+  try {
+    // Dynamic require to avoid bundling issues in client code
+    const { loadConfig } = require("../config/settings");
+    const gdConfig = loadConfig();
+    savedAnthropicKey = gdConfig.anthropicApiKey || undefined;
+    savedOpenrouterKey = gdConfig.openrouterApiKey || undefined;
+
+    // Load custom model overrides from config if present
+    if (gdConfig.models) {
+      savedModels = gdConfig.models;
+    }
+  } catch {
+    // Config module not available (e.g., in edge runtime) — skip
+  }
+
   return {
     anthropicApiKey:
-      config?.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY,
+      config?.anthropicApiKey ?? savedAnthropicKey ?? process.env.ANTHROPIC_API_KEY,
     openrouterApiKey:
-      config?.openrouterApiKey ?? process.env.OPENROUTER_API_KEY,
+      config?.openrouterApiKey ?? savedOpenrouterKey ?? process.env.OPENROUTER_API_KEY,
     models: {
       light:
-        config?.lightModel ?? DEFAULT_MODELS.light,
+        config?.lightModel ?? savedModels?.light ?? process.env.GOLDDIGGER_MODEL_LIGHT ?? DEFAULT_MODELS.light,
       standard:
-        config?.standardModel ?? DEFAULT_MODELS.standard,
+        config?.standardModel ?? savedModels?.standard ?? process.env.GOLDDIGGER_MODEL_STANDARD ?? DEFAULT_MODELS.standard,
       premium:
-        config?.premiumModel ?? DEFAULT_MODELS.premium,
+        config?.premiumModel ?? savedModels?.premium ?? process.env.GOLDDIGGER_MODEL_PREMIUM ?? DEFAULT_MODELS.premium,
     },
   };
 }
@@ -287,4 +392,4 @@ function getRoutingMode(cfg: ResolvedConfig): RoutingMode {
 
 // ── Exports for cost tracking ────────────────────────
 
-export { ESTIMATED_COSTS, TASK_TIER_MAP, DEFAULT_MODELS };
+export { ESTIMATED_COSTS, TASK_TIER_MAP, DEFAULT_MODELS, OPENROUTER_MODELS, ANTHROPIC_MODELS };

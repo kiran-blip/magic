@@ -23,9 +23,9 @@ export interface PromptInjectionMatch {
 
 /** 20+ credential patterns ported from v3 safety_governor.py. */
 const CREDENTIAL_PATTERNS: Record<string, RegExp> = {
-  openai_key: /sk-[a-zA-Z0-9]{20,}/g,
-  anthropic_key: /sk-ant-[a-zA-Z0-9]{20,}/g,
-  github_token: /ghp_[a-zA-Z0-9]{36}/g,
+  openai_key: /sk-[a-zA-Z0-9\-]{20,}/g,
+  anthropic_key: /sk-ant-[a-zA-Z0-9\-]{20,}/g,
+  github_token: /ghp_[a-zA-Z0-9]{30,}/g,
   gitlab_token: /glpat-[a-zA-Z0-9\-]{20}/g,
   aws_access_key: /AKIA[0-9A-Z]{16}/g,
   aws_secret_key: /aws_secret_access_key\s*=\s*[a-zA-Z0-9/+=]{40}/g,

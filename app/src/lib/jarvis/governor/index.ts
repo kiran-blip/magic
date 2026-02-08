@@ -2,7 +2,7 @@
  * JARVIS Safety Governor — barrel export.
  */
 
-export { checkContent, type GuardrailResult } from "./content-guard";
+export { checkContent, redactPii, type GuardrailResult } from "./content-guard";
 export {
   detectCredentials,
   sanitizeText,

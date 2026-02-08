@@ -2,33 +2,31 @@
  * Gold Digger Health Check Endpoint
  *
  * GET /api/jarvis/health
- * Returns Gold Digger system status.
+ * Returns Gold Digger system status, checking config file + env vars.
  */
 
 import { NextResponse } from "next/server";
+import { loadConfig, resolveRoutingMode } from "@/lib/jarvis/config";
 
 export async function GET() {
-  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
-  const hasOpenRouter = !!process.env.OPENROUTER_API_KEY;
+  const config = loadConfig();
+  const routingMode = resolveRoutingMode(config);
 
-  let routingMode: string;
-  if (hasAnthropic && hasOpenRouter) routingMode = "hybrid";
-  else if (hasAnthropic) routingMode = "anthropic_only";
-  else if (hasOpenRouter) routingMode = "openrouter_only";
-  else routingMode = "none";
+  const hasKeys = !!config.anthropicApiKey || !!config.openrouterApiKey;
 
   return NextResponse.json({
-    status: routingMode !== "none" ? "ready" : "unconfigured",
+    status: hasKeys ? "ready" : "unconfigured",
     version: "4.0.0",
     name: "Gold Digger",
     routingMode,
+    setupComplete: config.setupComplete,
     agents: ["investment", "research", "general"],
     features: {
-      safetyGovernor: true,
-      personalitySystem: true,
-      multiTierRouting: hasOpenRouter,
+      safetyGovernor: config.preferences.enableSafetyGovernor,
+      personalitySystem: config.preferences.enablePersonality,
+      multiTierRouting: routingMode === "hybrid",
       credentialDetection: true,
-      financialDisclaimers: true,
+      financialDisclaimers: config.preferences.enableDisclaimers,
     },
   });
 }

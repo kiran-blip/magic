@@ -66,6 +66,8 @@ const INSIDER_TRADING_KEYWORDS = [
 
 const MONEY_LAUNDERING_KEYWORDS = [
   "money laundering",
+  "launder money",
+  "laundering money",
   "wash trading",
   "structuring deposits",
   "smurfing",
@@ -252,6 +254,29 @@ function checkFinancialDisclaimer(
     result.addDisclaimer = true;
     result.evidence.financial_analysis_requested = true;
   }
+}
+
+// ── PII Redaction ───────────────────────────────────
+
+/**
+ * Redact detected PII from text.
+ * Replaces SSNs, credit card numbers, phone numbers, and emails
+ * with type-specific placeholders.
+ */
+export function redactPii(text: string): string {
+  const replacements: Record<string, string> = {
+    ssn: "[SSN REDACTED]",
+    credit_card: "[CARD REDACTED]",
+    phone: "[PHONE REDACTED]",
+    email: "[EMAIL REDACTED]",
+  };
+
+  let result = text;
+  for (const [piiType, pattern] of Object.entries(PII_PATTERNS)) {
+    pattern.lastIndex = 0;
+    result = result.replace(pattern, replacements[piiType] ?? "[PII REDACTED]");
+  }
+  return result;
 }
 
 // ── Public API ───────────────────────────────────────
