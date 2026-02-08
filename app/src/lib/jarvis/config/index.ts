@@ -10,4 +10,5 @@ export {
   testApiKey,
   type GoldDiggerConfig,
   type GoldDiggerConfigPublic,
+  type UserProfile,
 } from "./settings";

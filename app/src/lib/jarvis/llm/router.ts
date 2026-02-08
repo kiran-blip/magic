@@ -22,9 +22,9 @@ export type ModelTier = (typeof ModelTier)[keyof typeof ModelTier];
 
 /** Model names for Anthropic direct API. */
 const ANTHROPIC_MODELS: Record<ModelTier, string> = {
-  light: "claude-sonnet-4-20250514",
-  standard: "claude-sonnet-4-20250514",
-  premium: "claude-sonnet-4-20250514",
+  light: "claude-haiku-4-5-20251001",
+  standard: "claude-sonnet-4-5-20250929",
+  premium: "claude-sonnet-4-5-20250929",
 };
 
 /**
@@ -34,7 +34,7 @@ const ANTHROPIC_MODELS: Record<ModelTier, string> = {
 const OPENROUTER_MODELS: Record<ModelTier, string> = {
   light: "meta-llama/llama-3.1-8b-instruct",
   standard: "meta-llama/llama-3.1-70b-instruct",
-  premium: "moonshotai/kimi-k2.5",
+  premium: "anthropic/claude-sonnet-4.5",
 };
 
 /**
@@ -44,7 +44,7 @@ const OPENROUTER_MODELS: Record<ModelTier, string> = {
 const DEFAULT_MODELS: Record<ModelTier, string> = {
   light: "meta-llama/llama-3.1-8b-instruct",
   standard: "meta-llama/llama-3.1-70b-instruct",
-  premium: "moonshotai/kimi-k2.5",
+  premium: "anthropic/claude-sonnet-4.5",
 };
 
 const TIER_FALLBACK_CHAIN: ModelTier[] = ["light", "standard", "premium"];
@@ -319,7 +319,20 @@ async function callOpenRouter(
   }
 
   const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
+  const message = data.choices?.[0]?.message;
+  let content = message?.content;
+
+  // Handle reasoning models (e.g., kimi-k2.5) that return empty content
+  // with the actual response in the reasoning field
+  if (!content && message?.reasoning) {
+    const reasoning = typeof message.reasoning === "string"
+      ? message.reasoning
+      : message.reasoning_details?.[0]?.text ?? message.reasoning?.text ?? "";
+    if (reasoning) {
+      console.warn("[Gold Digger Router] Content empty, using reasoning field as fallback");
+      content = reasoning;
+    }
+  }
 
   if (!content && data.error) {
     throw new Error(`OpenRouter error: ${data.error.message ?? JSON.stringify(data.error)}`);

@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 
 /* ── Step definitions ────────────────────────────── */
 
-type Step = "welcome" | "keys" | "preferences" | "test" | "complete";
+type Step = "welcome" | "keys" | "profile" | "preferences" | "test" | "complete";
 
-const STEPS: Step[] = ["welcome", "keys", "preferences", "test", "complete"];
+const STEPS: Step[] = ["welcome", "keys", "profile", "preferences", "test", "complete"];
 
 const STEP_LABELS: Record<Step, string> = {
   welcome: "Welcome",
   keys: "API Keys",
+  profile: "Your Profile",
   preferences: "Preferences",
   test: "Test",
   complete: "Done",
@@ -29,11 +30,33 @@ export default function GoldDiggerSetup() {
   const [enableSafety, setEnableSafety] = useState(true);
   const [enablePersonality, setEnablePersonality] = useState(true);
 
+  // User profile state
+  const [riskTolerance, setRiskTolerance] = useState<string>("moderate");
+  const [capitalRange, setCapitalRange] = useState<string>("5k_50k");
+  const [focusAreas, setFocusAreas] = useState<string[]>(["all"]);
+  const [experienceLevel, setExperienceLevel] = useState<string>("intermediate");
+
   const [testStatus, setTestStatus] = useState<Record<string, { testing: boolean; result?: { success: boolean; message: string } }>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const stepIndex = STEPS.indexOf(step);
+
+  /* ── Focus area toggle ─────────────────────── */
+
+  function toggleFocusArea(area: string) {
+    if (area === "all") {
+      setFocusAreas(["all"]);
+      return;
+    }
+    setFocusAreas((prev) => {
+      const without = prev.filter((a) => a !== "all" && a !== area);
+      if (prev.includes(area)) {
+        return without.length > 0 ? without : ["all"];
+      }
+      return [...without, area];
+    });
+  }
 
   /* ── API key testing ─────────────────────────── */
 
@@ -77,6 +100,12 @@ export default function GoldDiggerSetup() {
             enableSafetyGovernor: enableSafety,
             enablePersonality,
           },
+          userProfile: {
+            riskTolerance,
+            capitalRange,
+            focusAreas,
+            experienceLevel,
+          },
         }),
       });
 
@@ -100,18 +129,18 @@ export default function GoldDiggerSetup() {
       <div className="space-y-6">
         <div className="text-center space-y-4">
           <div className="text-5xl">&#x26CF;&#xFE0F;</div>
-          <h2 className="text-2xl font-bold text-foreground">Welcome to Gold Digger</h2>
+          <h2 className="text-2xl font-bold text-foreground">Welcome to Gold Digger AGI</h2>
           <p className="text-muted text-sm max-w-md mx-auto">
-            AI-powered investment analysis and market research, built into Magic.
-            {"Let's"} get you set up in a few quick steps.
+            Your proactive wealth intelligence system. Not a chatbot — a financial strategist that
+            scans for opportunities, analyzes markets, and tells you what to do.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
           {[
-            { icon: "\uD83D\uDCCA", title: "Investment Analysis", desc: "6-node pipeline with live market data, technicals, and AI recommendations" },
-            { icon: "\uD83D\uDD2C", title: "Market Research", desc: "7-node pipeline with competitive analysis, opportunity scoring, and insights" },
-            { icon: "\uD83D\uDEE1\uFE0F", title: "Safety Built In", desc: "Content guard with 60+ patterns, credential detection, and disclaimers" },
+            { icon: "\uD83D\uDCCA", title: "Investment Analysis", desc: "Live market data, fundamental/technical analysis, BUY/SELL/HOLD with price targets" },
+            { icon: "\uD83D\uDD2C", title: "Market Research", desc: "TAM/SAM/SOM sizing, competitive mapping, 0-100 opportunity scoring" },
+            { icon: "\uD83C\uDFAF", title: "Proactive Radar", desc: "Say 'hi' and get wealth opportunities, actions, and risk alerts — automatically" },
           ].map((f) => (
             <div key={f.title} className="bg-background border border-border rounded-lg p-4 text-center">
               <div className="text-2xl mb-2">{f.icon}</div>
@@ -190,6 +219,121 @@ export default function GoldDiggerSetup() {
     );
   }
 
+  /* ── Step: User Profile ───────────────────────── */
+
+  function renderProfile() {
+    return (
+      <div className="space-y-6">
+        <div className="text-center space-y-2 mb-6">
+          <h2 className="text-xl font-bold text-foreground">Your Investor Profile</h2>
+          <p className="text-muted text-sm">Gold Digger AGI tailors all advice to YOUR situation. This takes 30 seconds.</p>
+        </div>
+
+        {/* Risk Tolerance */}
+        <div className="bg-background border border-border rounded-xl p-5 space-y-3">
+          <div className="text-sm font-medium text-foreground">Risk Tolerance</div>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { value: "conservative", label: "Conservative", icon: "\uD83D\uDEE1\uFE0F", desc: "Capital preservation, dividends, steady returns" },
+              { value: "moderate", label: "Moderate", icon: "\u2696\uFE0F", desc: "Balanced growth, calculated risks, diversified" },
+              { value: "aggressive", label: "Aggressive", icon: "\uD83D\uDE80", desc: "Maximum upside, high volatility OK, growth-focused" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setRiskTolerance(opt.value)}
+                className={`p-3 rounded-lg border text-center transition-colors ${
+                  riskTolerance === opt.value
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-card text-muted hover:border-accent/40 hover:text-foreground"
+                }`}
+              >
+                <div className="text-xl mb-1">{opt.icon}</div>
+                <div className="text-xs font-medium">{opt.label}</div>
+                <div className="text-[10px] mt-0.5 opacity-70">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Capital Range */}
+        <div className="bg-background border border-border rounded-xl p-5 space-y-3">
+          <div className="text-sm font-medium text-foreground">Investment Capital</div>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { value: "under_5k", label: "Under $5K", desc: "High-efficiency moves, every dollar counts" },
+              { value: "5k_50k", label: "$5K – $50K", desc: "Building a meaningful portfolio" },
+              { value: "50k_500k", label: "$50K – $500K", desc: "Serious capital, proper allocation" },
+              { value: "over_500k", label: "$500K+", desc: "Institutional-grade approach" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setCapitalRange(opt.value)}
+                className={`p-3 rounded-lg border text-left transition-colors ${
+                  capitalRange === opt.value
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-card text-muted hover:border-accent/40 hover:text-foreground"
+                }`}
+              >
+                <div className="text-sm font-medium">{opt.label}</div>
+                <div className="text-[10px] mt-0.5 opacity-70">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Focus Areas */}
+        <div className="bg-background border border-border rounded-xl p-5 space-y-3">
+          <div className="text-sm font-medium text-foreground">Focus Areas <span className="text-muted font-normal">(select all that apply)</span></div>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { value: "stocks", label: "Stocks & ETFs", icon: "\uD83D\uDCCA" },
+              { value: "crypto", label: "Crypto & Web3", icon: "\u20BF" },
+              { value: "business", label: "Business & Side Income", icon: "\uD83D\uDCBC" },
+              { value: "real_estate", label: "Real Estate", icon: "\uD83C\uDFE0" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => toggleFocusArea(opt.value)}
+                className={`p-3 rounded-lg border text-left transition-colors ${
+                  focusAreas.includes(opt.value) || focusAreas.includes("all")
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-card text-muted hover:border-accent/40 hover:text-foreground"
+                }`}
+              >
+                <div className="text-sm">{opt.icon} {opt.label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Experience Level */}
+        <div className="bg-background border border-border rounded-xl p-5 space-y-3">
+          <div className="text-sm font-medium text-foreground">Experience Level</div>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { value: "beginner", label: "Beginner", desc: "New to investing, need guidance" },
+              { value: "intermediate", label: "Intermediate", desc: "Know the basics, want better strategy" },
+              { value: "advanced", label: "Advanced", desc: "Want alpha, skip the education" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setExperienceLevel(opt.value)}
+                className={`p-3 rounded-lg border text-center transition-colors ${
+                  experienceLevel === opt.value
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-card text-muted hover:border-accent/40 hover:text-foreground"
+                }`}
+              >
+                <div className="text-xs font-medium">{opt.label}</div>
+                <div className="text-[10px] mt-0.5 opacity-70">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ── Step: Preferences ───────────────────────── */
 
   function renderPreferences() {
@@ -228,9 +372,9 @@ export default function GoldDiggerSetup() {
         <div className="bg-background border border-border rounded-xl p-5 space-y-4">
           <div className="text-sm font-medium text-foreground">Features</div>
           {([
-            { key: "disclaimers", label: "Financial Disclaimers", desc: "Auto-append investment disclaimers", value: enableDisclaimers, setter: setEnableDisclaimers },
+            { key: "disclaimers", label: "Financial Disclaimers", desc: "Auto-append investment disclaimers to recommendations", value: enableDisclaimers, setter: setEnableDisclaimers },
             { key: "safety", label: "Safety Governor", desc: "Block risky content, detect credentials & PII", value: enableSafety, setter: setEnableSafety },
-            { key: "personality", label: "JARVIS Personality", desc: "Witty, warm, personality-driven responses", value: enablePersonality, setter: setEnablePersonality },
+            { key: "personality", label: "Gold Digger AGI Personality", desc: "Proactive, wealth-focused, opinionated responses", value: enablePersonality, setter: setEnablePersonality },
           ] as const).map((t) => (
             <div key={t.key} className="flex items-center justify-between py-2 border-b border-border last:border-0">
               <div>
@@ -322,8 +466,13 @@ export default function GoldDiggerSetup() {
           )}
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-4 text-xs text-muted">
-          Testing sends a minimal request to verify your key. You can skip and finish setup.
+        {/* Profile summary */}
+        <div className="bg-card border border-border rounded-lg p-4 text-xs text-muted space-y-1">
+          <div className="font-medium text-foreground mb-2">Your Profile Summary:</div>
+          <div>Risk: <span className="text-accent capitalize">{riskTolerance}</span></div>
+          <div>Capital: <span className="text-accent">{capitalRange.replace(/_/g, " ").replace("5k", "$5K").replace("50k", "$50K").replace("500k", "$500K").replace("under", "Under").replace("over", "Over")}</span></div>
+          <div>Focus: <span className="text-accent capitalize">{focusAreas.join(", ").replace(/_/g, " ")}</span></div>
+          <div>Experience: <span className="text-accent capitalize">{experienceLevel}</span></div>
         </div>
       </div>
     );
@@ -334,20 +483,20 @@ export default function GoldDiggerSetup() {
   function renderComplete() {
     return (
       <div className="text-center space-y-6 py-8">
-        <div className="text-5xl">{"\uD83C\uDF89"}</div>
-        <h2 className="text-2xl font-bold text-foreground">{"You're"} All Set</h2>
+        <div className="text-5xl">{"\uD83D\uDCB0"}</div>
+        <h2 className="text-2xl font-bold text-foreground">Gold Digger AGI is Ready</h2>
         <p className="text-muted text-sm max-w-sm mx-auto">
-          Gold Digger is ready. Try asking it to analyze a stock or research a market.
+          Wealth radar is active. Say anything — even just {'"hi"'} — and {"I'll"} start working for you.
         </p>
 
         <div className="grid grid-cols-2 gap-3 max-w-sm mx-auto mt-6">
           <div className="bg-background border border-border rounded-lg p-3 text-left">
             <div className="text-xs text-muted mb-1">Try saying:</div>
-            <div className="text-sm text-foreground">{'"Analyze AAPL stock"'}</div>
+            <div className="text-sm text-foreground">{'"Analyze TSLA stock"'}</div>
           </div>
           <div className="bg-background border border-border rounded-lg p-3 text-left">
-            <div className="text-xs text-muted mb-1">Or:</div>
-            <div className="text-sm text-foreground">{'"Research AI tools market"'}</div>
+            <div className="text-xs text-muted mb-1">Or just:</div>
+            <div className="text-sm text-foreground">{'"hi"'}</div>
           </div>
         </div>
 
@@ -355,7 +504,7 @@ export default function GoldDiggerSetup() {
           onClick={() => router.push("/dashboard/gold-digger")}
           className="px-8 py-3 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
         >
-          Start Using Gold Digger
+          Start Using Gold Digger AGI
         </button>
       </div>
     );
@@ -385,7 +534,7 @@ export default function GoldDiggerSetup() {
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-xl font-bold text-foreground">Gold Digger Setup</h1>
+          <h1 className="text-xl font-bold text-foreground">Gold Digger AGI Setup</h1>
           <p className="text-sm text-muted mt-1">Step {stepIndex + 1} of {STEPS.length}</p>
         </div>
         {step !== "complete" && (
@@ -406,9 +555,10 @@ export default function GoldDiggerSetup() {
       </div>
 
       {/* Content */}
-      <div className="bg-card border border-border rounded-xl p-6 min-h-[400px]">
+      <div className="bg-card border border-border rounded-xl p-6 min-h-[400px] overflow-y-auto max-h-[70vh]">
         {step === "welcome" && renderWelcome()}
         {step === "keys" && renderKeys()}
+        {step === "profile" && renderProfile()}
         {step === "preferences" && renderPreferences()}
         {step === "test" && renderTest()}
         {step === "complete" && renderComplete()}

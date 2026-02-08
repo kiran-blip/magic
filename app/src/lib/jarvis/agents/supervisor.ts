@@ -286,18 +286,19 @@ function getOfflineFallback(agentType: string, query: string): string {
     );
   }
 
-  // General fallback
+  // General fallback — Gold Digger AGI voice
   return (
-    "I'm temporarily unable to connect to the AI service, but I'm still here to help!\n\n" +
-    "**Here's what Gold Digger can do once we're back online:**\n\n" +
-    "📈 **Investment Analysis** — Ask me about any stock, crypto, or asset. I'll pull live data, analyze fundamentals and technicals, and give you a bull/bear/base case with a confidence score.\n\n" +
-    "🔍 **Market Research** — Tell me a market or niche and I'll assess the opportunity: market size, competition, trends, and an opportunity score from 0-100.\n\n" +
-    "💬 **Financial Guidance** — Ask me anything about investing, savings strategies, market trends, or how to evaluate opportunities.\n\n" +
-    "**Quick tips while you wait:**\n" +
-    "• Check that your API keys are configured in Settings\n" +
-    "• Verify your internet connection is working\n" +
-    "• The AI provider (OpenRouter) may be temporarily down\n\n" +
-    "I'll be fully operational again as soon as connectivity is restored."
+    "**Gold Digger AGI — Offline Mode**\n\n" +
+    "Wealth radar is temporarily limited (AI service unreachable), but here's what you should be doing right now:\n\n" +
+    "**3 Standing Wealth Principles:**\n" +
+    "1. **Don't let cash sit idle** — Every dollar not deployed is losing to inflation. If you have cash reserves beyond 6 months expenses, deploy the rest.\n" +
+    "2. **Asymmetric bets > safe bets** — Find opportunities where the downside is capped but the upside is 3-10x. These exist in every market cycle.\n" +
+    "3. **Skill-to-cash conversion** — Your highest ROI investment might be yourself. One high-value skill can generate income for decades.\n\n" +
+    "**Once I'm back online, I'll deliver:**\n" +
+    "• Live investment analysis with real-time data, BUY/SELL/HOLD recommendations, and specific price targets\n" +
+    "• Market research with opportunity scoring (0-100) and TAM/SAM/SOM sizing\n" +
+    "• Proactive wealth scanning — I'll tell you what you're missing\n\n" +
+    "---\n*Check API keys in Settings if this persists.*"
   );
 }
 
@@ -392,18 +393,22 @@ export async function runJarvis(
     metadata: {},
   };
 
-  // Check for PURE greetings (skip routing for "hi" / "hello" ONLY if nothing else)
-  const pureGreetingPattern = /^(hi|hello|hey|greetings|good\s+(morning|afternoon|evening))[!.?]?$/i;
+  // Check for PURE greetings — route to general agent with wealth radar active
+  // Gold Digger AGI NEVER gives a dead-end greeting. Even "hi" triggers wealth scanning.
+  const pureGreetingPattern = /^(hi|hello|hey|greetings|good\s+(morning|afternoon|evening)|what'?s?\s+up|yo|sup)[!.?]?$/i;
   const isGreeting = pureGreetingPattern.test(query.trim());
 
   if (isGreeting && !options.forceAgentType) {
-    // Short-circuit: respond with a greeting — only for pure greetings with no follow-up content
+    // Route to general agent — the Gold Digger AGI persona will deliver
+    // proactive wealth insights even for casual greetings
     state.agentType = "general";
     state = governorNode(state);
     if (state.stage === "blocked") return endNode(state);
 
-    const greeting = formatGreeting("Sir");
-    state.response = greeting + " What can I help you with today?";
+    // Let the LLM handle it with the Gold Digger AGI personality —
+    // it will automatically respond with wealth radar output
+    console.log("[Gold Digger] Greeting detected — routing to general agent with wealth radar");
+    state.response = await generalChatAgent(state);
     state.stage = "end";
     return endNode(state);
   }

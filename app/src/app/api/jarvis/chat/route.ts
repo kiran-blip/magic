@@ -10,6 +10,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import { runJarvis } from "@/lib/jarvis";
+import {
+  storeConversation,
+  recallRelevant,
+  recallInvestmentHistory,
+  generateTags,
+} from "@/lib/jarvis/memory";
 
 function authenticate(req: NextRequest) {
   const token = req.cookies.get("magic-token")?.value;
@@ -69,11 +75,58 @@ export async function POST(req: NextRequest) {
     : [];
 
   try {
+    // ── Memory recall: surface relevant past conversations ──
+    let memoryContext = "";
+    try {
+      const relevant = recallRelevant(message, 3);
+      if (relevant.length > 0) {
+        const recallLines = relevant.map((m) =>
+          `[${m.timestamp.slice(0, 10)}] ${m.agentType}: "${m.userQuery}" → ${m.summary}`
+        );
+        memoryContext = `\n\n[MEMORY RECALL — Previous relevant conversations]\n${recallLines.join("\n")}`;
+      }
+
+      // For investment queries, also recall recent investment decisions
+      const investmentHistory = recallInvestmentHistory(undefined, 3);
+      if (investmentHistory.length > 0) {
+        const histLines = investmentHistory.map((m) =>
+          `[${m.timestamp.slice(0, 10)}] ${m.symbol}: ${m.action} @ ${m.confidence}% — ${m.reasoning.slice(0, 80)}`
+        );
+        memoryContext += `\n[Recent investment decisions]\n${histLines.join("\n")}`;
+      }
+    } catch (err) {
+      // Memory recall is non-critical — continue without it
+      console.warn("[JARVIS Memory] Recall failed:", err);
+    }
+
+    // Inject memory context into history if available
+    const enrichedHistory = memoryContext
+      ? [{ role: "system" as const, content: memoryContext }, ...validatedHistory]
+      : validatedHistory;
+
     // Run JARVIS pipeline
-    const result = await runJarvis(message, validatedHistory, {
+    const result = await runJarvis(message, enrichedHistory, {
       forceAgentType: validatedAgentType,
       quickChat,
     });
+
+    // ── Memory store: save this conversation ──
+    try {
+      const responseText = result.response ?? "";
+      const tags = generateTags(message, responseText);
+      storeConversation({
+        timestamp: new Date().toISOString(),
+        userQuery: message,
+        agentType: result.agentType ?? "general",
+        summary: responseText.slice(0, 300),
+        fullResponse: responseText,
+        symbols: tags.filter((t) => /^[A-Z]{1,5}$/.test(t)),
+        tags,
+      });
+    } catch (err) {
+      // Memory storage is non-critical — don't fail the response
+      console.warn("[JARVIS Memory] Store failed:", err);
+    }
 
     // Include blockReason when query was blocked by governor
     const governancePayload = result.governance

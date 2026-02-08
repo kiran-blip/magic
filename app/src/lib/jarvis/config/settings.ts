@@ -23,6 +23,14 @@ import { join } from "path";
 
 // ── Config shape ────────────────────────────────────
 
+export interface UserProfile {
+  riskTolerance: "conservative" | "moderate" | "aggressive";
+  capitalRange: "under_5k" | "5k_50k" | "50k_500k" | "over_500k";
+  focusAreas: Array<"stocks" | "crypto" | "business" | "real_estate" | "all">;
+  experienceLevel: "beginner" | "intermediate" | "advanced";
+  investmentGoal?: string; // e.g., "retirement", "passive income", "wealth building"
+}
+
 export interface GoldDiggerConfig {
   setupComplete: boolean;
   anthropicApiKey: string;
@@ -34,6 +42,7 @@ export interface GoldDiggerConfig {
     enableSafetyGovernor: boolean;
     enablePersonality: boolean;
   };
+  userProfile?: UserProfile;
   createdAt: string;
   updatedAt: string;
 }
@@ -49,6 +58,7 @@ export interface GoldDiggerConfigPublic {
   /** The preferred LLM model identifier (derived from routing mode). */
   preferredModel: string;
   preferences: GoldDiggerConfig["preferences"];
+  userProfile?: UserProfile;
   createdAt: string;
   updatedAt: string;
   /** True when config is driven by env vars and filesystem is not writable. */
@@ -238,6 +248,9 @@ export function updateConfig(
       ...config.preferences,
       ...(updates.preferences ?? {}),
     },
+    userProfile: updates.userProfile
+      ? { ...(config.userProfile ?? {}), ...updates.userProfile }
+      : config.userProfile,
     updatedAt: new Date().toISOString(),
   };
   const persisted = saveConfig(merged);
@@ -263,9 +276,9 @@ export function getPublicConfig(): GoldDiggerConfigPublic {
   // Derive preferred model from routing mode
   const preferredModel =
     effectiveRouting === "anthropic_only"
-      ? "claude-sonnet-4"
+      ? "claude-sonnet-4.5"
       : effectiveRouting === "openrouter_only"
-        ? "moonshotai/kimi-k2.5"
+        ? "anthropic/claude-sonnet-4.5"
         : effectiveRouting === "hybrid"
           ? "auto"
           : "none";
@@ -279,6 +292,7 @@ export function getPublicConfig(): GoldDiggerConfigPublic {
     routingMode: effectiveRouting,
     preferredModel,
     preferences: config.preferences,
+    userProfile: config.userProfile,
     createdAt: config.createdAt,
     updatedAt: config.updatedAt,
     envOnly: !isFilesystemWritable(),
@@ -355,7 +369,7 @@ export async function testApiKey(
           "X-Title": "Gold Digger",
         },
         body: JSON.stringify({
-          model: "moonshotai/kimi-k2.5",
+          model: "meta-llama/llama-3.1-8b-instruct",
           max_tokens: 10,
           messages: [{ role: "user", content: "Hi" }],
         }),

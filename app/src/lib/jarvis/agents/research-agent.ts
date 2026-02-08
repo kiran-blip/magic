@@ -336,20 +336,24 @@ async function generateRecommendations(
     getAgentPrompt("research") +
     `
 
-TASK: Generate strategic market research recommendations.
+TASK: Generate wealth-focused strategic recommendations.
 
 The opportunity tier for this market is: ${opportunityScore.tier.toUpperCase()} (${opportunityScore.score}/100)
 Context: ${tierContext[opportunityScore.tier]}
 
-Generate specific, actionable recommendations based on all research data. Consider:
-- Market entry strategies
-- Competitive positioning
-- Resource requirements
-- Risk factors
-- Growth potential
+Generate specific, ACTIONABLE recommendations that answer: "How does the user make money from this?"
 
-Write in your JARVIS voice — be thorough but engaging. Tell the story behind the numbers.
-Be specific and practical. Return concise but comprehensive recommendations.`;
+STRUCTURE YOUR RESPONSE:
+1. **Verdict** — One sentence: Is this worth pursuing? Yes/No/Conditional
+2. **The Money Play** — The #1 way to profit from this market (invest in it, build for it, or leverage the trend)
+3. **Picks & Shovels** — Who profits regardless of which specific company wins?
+4. **Entry Strategy** — Specific steps to get started (timeline, capital needed, first moves)
+5. **Risk Factors** — What could kill this opportunity (specific, not vague)
+6. **30/90/365 Day View** — What to watch and when to act
+
+Every recommendation must tie back to: revenue potential, investment opportunity, or competitive advantage.
+Be specific about stocks/ETFs to watch, business models to consider, or skills to develop.
+Be concise but comprehensive. No fluff.`;
 
   const researchSummary = {
     niche,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -10,6 +10,100 @@ interface Message {
   agentType?: string;
   blocked?: boolean;
   blockReason?: string;
+  timestamp?: string;
+}
+
+interface HistoryItem {
+  id: string;
+  timestamp: string;
+  userQuery: string;
+  agentType: string;
+  summary: string;
+}
+
+/** Render basic markdown: bold, italic, bullets, horizontal rules, line breaks */
+function renderMarkdown(text: string): React.ReactNode {
+  const lines = text.split("\n");
+  const elements: React.ReactNode[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      elements.push(<hr key={i} className="border-border/50 my-2" />);
+      continue;
+    }
+
+    // Empty line = spacing
+    if (line.trim() === "") {
+      elements.push(<div key={i} className="h-1.5" />);
+      continue;
+    }
+
+    // Bullet point
+    if (/^[•\-\*]\s/.test(line.trim())) {
+      const content = line.trim().replace(/^[•\-\*]\s/, "");
+      elements.push(
+        <div key={i} className="flex gap-2 pl-2">
+          <span className="text-accent/60 mt-0.5">•</span>
+          <span>{renderInline(content)}</span>
+        </div>
+      );
+      continue;
+    }
+
+    // Numbered list
+    if (/^\d+\.\s/.test(line.trim())) {
+      const match = line.trim().match(/^(\d+)\.\s(.*)$/);
+      if (match) {
+        elements.push(
+          <div key={i} className="flex gap-2 pl-2">
+            <span className="text-accent/60 font-medium min-w-[1.2em]">{match[1]}.</span>
+            <span>{renderInline(match[2])}</span>
+          </div>
+        );
+        continue;
+      }
+    }
+
+    // Regular line
+    elements.push(<div key={i}>{renderInline(line)}</div>);
+  }
+
+  return <>{elements}</>;
+}
+
+/** Render inline markdown: **bold**, *italic* */
+function renderInline(text: string): React.ReactNode {
+  // Split by bold markers first
+  const parts: React.ReactNode[] = [];
+  const regex = /\*\*(.+?)\*\*|\*(.+?)\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = regex.exec(text)) !== null) {
+    // Text before match
+    if (match.index > lastIndex) {
+      parts.push(<span key={key++}>{text.slice(lastIndex, match.index)}</span>);
+    }
+    if (match[1]) {
+      // Bold
+      parts.push(<strong key={key++} className="font-semibold text-foreground">{match[1]}</strong>);
+    } else if (match[2]) {
+      // Italic
+      parts.push(<em key={key++} className="italic text-muted">{match[2]}</em>);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Remaining text
+  if (lastIndex < text.length) {
+    parts.push(<span key={key++}>{text.slice(lastIndex)}</span>);
+  }
+
+  return <>{parts.length > 0 ? parts : text}</>;
 }
 
 type AgentMode = "auto" | "investment" | "research" | "general";
@@ -105,16 +199,31 @@ const MODE_CONFIG: Record<
   },
 };
 
+const LOADING_STAGES = [
+  "Routing query...",
+  "Safety check...",
+  "Fetching market data...",
+  "Analyzing fundamentals...",
+  "Running technicals...",
+  "Reading sentiment...",
+  "Generating recommendation...",
+];
+
 export default function GoldDiggerPage() {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   const [mode, setMode] = useState<AgentMode>("auto");
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const loadingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check setup status + health
   useEffect(() => {
@@ -128,6 +237,38 @@ export default function GoldDiggerPage() {
       .then((d) => setSetupComplete(d.setupComplete ?? false))
       .catch(() => setSetupComplete(false));
   }, []);
+
+  // Load conversation history
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch("/api/jarvis/history?limit=30");
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.data ?? []);
+      }
+    } catch {
+      // History loading is non-critical
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  // Animated loading stages
+  useEffect(() => {
+    if (loading) {
+      setLoadingStage(0);
+      loadingTimerRef.current = setInterval(() => {
+        setLoadingStage((prev) => Math.min(prev + 1, LOADING_STAGES.length - 1));
+      }, 2500);
+    } else {
+      if (loadingTimerRef.current) clearInterval(loadingTimerRef.current);
+      setLoadingStage(0);
+    }
+    return () => {
+      if (loadingTimerRef.current) clearInterval(loadingTimerRef.current);
+    };
+  }, [loading]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -252,9 +393,9 @@ export default function GoldDiggerPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Gold Digger</h1>
+          <h1 className="text-2xl font-bold text-foreground">Gold Digger <span className="text-accent text-sm font-normal">AGI</span></h1>
           <p className="text-muted text-sm mt-0.5">
-            AI-powered investment analysis and market research
+            Wealth radar active — investment analysis, market research, opportunity scanning
           </p>
         </div>
         <div className="flex gap-2 items-center">
@@ -275,6 +416,23 @@ export default function GoldDiggerPage() {
                   ? "offline"
                   : "checking..."}
           </span>
+          <button
+            onClick={() => {
+              setShowHistory(!showHistory);
+              if (!showHistory) loadHistory();
+            }}
+            className={`w-8 h-8 flex items-center justify-center rounded-lg border transition-colors ${
+              showHistory
+                ? "bg-accent/10 border-accent/30 text-accent"
+                : "bg-card border-border text-muted hover:text-foreground hover:border-accent/40"
+            }`}
+            title="Conversation History"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          </button>
           <Link
             href="/dashboard/gold-digger/settings"
             className="w-8 h-8 flex items-center justify-center rounded-lg bg-card border border-border text-muted hover:text-foreground hover:border-accent/40 transition-colors"
@@ -296,8 +454,55 @@ export default function GoldDiggerPage() {
         </div>
       </div>
 
-      {/* Chat area */}
-      <div className="flex-1 bg-card border border-border rounded-xl overflow-hidden flex flex-col min-h-0">
+      {/* Chat area with optional history sidebar */}
+      <div className="flex-1 flex gap-3 min-h-0">
+        {/* History sidebar */}
+        {showHistory && (
+          <div className="w-72 bg-card border border-border rounded-xl overflow-hidden flex flex-col shrink-0">
+            <div className="p-3 border-b border-border flex items-center justify-between">
+              <span className="text-xs font-medium text-foreground">History</span>
+              <button
+                onClick={loadHistory}
+                className="text-[10px] text-muted hover:text-accent transition-colors"
+              >
+                {historyLoading ? "Loading..." : "Refresh"}
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-2 space-y-1">
+              {history.length === 0 && !historyLoading && (
+                <div className="text-xs text-muted/50 text-center py-6">No conversations yet</div>
+              )}
+              {history.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setInput(item.userQuery);
+                    inputRef.current?.focus();
+                  }}
+                  className="w-full text-left p-2 rounded-lg hover:bg-background border border-transparent hover:border-border/50 transition-colors group"
+                >
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span
+                      className={`text-[9px] px-1.5 py-0.5 rounded-full ${
+                        AGENT_BADGES[item.agentType]?.color ?? "bg-border/50 text-muted/60"
+                      }`}
+                    >
+                      {AGENT_BADGES[item.agentType]?.label ?? item.agentType}
+                    </span>
+                    <span className="text-[9px] text-muted/40">
+                      {new Date(item.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </span>
+                  </div>
+                  <div className="text-xs text-foreground/80 truncate">{item.userQuery}</div>
+                  <div className="text-[10px] text-muted/50 truncate mt-0.5">{item.summary.slice(0, 80)}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Main chat column */}
+        <div className="flex-1 bg-card border border-border rounded-xl overflow-hidden flex flex-col min-h-0">
         <div ref={scrollRef} className="flex-1 overflow-auto p-4 space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full py-8">
@@ -407,10 +612,10 @@ export default function GoldDiggerPage() {
               }`}
             >
               <div
-                className={`max-w-[85%] px-4 py-3 rounded-xl text-sm whitespace-pre-wrap ${
+                className={`max-w-[85%] px-4 py-3 rounded-xl text-sm ${
                   msg.role === "user"
-                    ? "bg-accent text-white rounded-br-sm"
-                    : "bg-background border border-border text-foreground rounded-bl-sm"
+                    ? "bg-accent text-white rounded-br-sm whitespace-pre-wrap"
+                    : "bg-background border border-border text-foreground rounded-bl-sm leading-relaxed"
                 }`}
               >
                 {msg.role === "assistant" && (msg.agentType || msg.blocked) && (
@@ -432,25 +637,36 @@ export default function GoldDiggerPage() {
                     )}
                   </div>
                 )}
-                {msg.content}
+                {msg.role === "assistant" ? renderMarkdown(msg.content) : msg.content}
               </div>
             </div>
           ))}
           {loading && (
             <div className="flex justify-start">
-              <div className="bg-background border border-border rounded-xl rounded-bl-sm px-4 py-3 text-sm text-muted flex items-center gap-2">
-                <span className="flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce" />
-                  <span
-                    className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce"
-                    style={{ animationDelay: "0.15s" }}
+              <div className="bg-background border border-border rounded-xl rounded-bl-sm px-4 py-3 text-sm text-muted">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce" />
+                    <span
+                      className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce"
+                      style={{ animationDelay: "0.15s" }}
+                    />
+                    <span
+                      className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce"
+                      style={{ animationDelay: "0.3s" }}
+                    />
+                  </span>
+                  <span className="text-xs font-medium text-accent/80">
+                    {LOADING_STAGES[loadingStage]}
+                  </span>
+                </div>
+                {/* Progress bar */}
+                <div className="w-48 h-0.5 bg-border/50 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent/60 rounded-full transition-all duration-1000"
+                    style={{ width: `${((loadingStage + 1) / LOADING_STAGES.length) * 100}%` }}
                   />
-                  <span
-                    className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce"
-                    style={{ animationDelay: "0.3s" }}
-                  />
-                </span>
-                Analyzing...
+                </div>
               </div>
             </div>
           )}
@@ -501,6 +717,7 @@ export default function GoldDiggerPage() {
               Send
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

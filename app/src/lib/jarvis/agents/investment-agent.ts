@@ -15,6 +15,7 @@
 
 import { invoke as llmInvoke, getTierForTask, type LLMMessage } from "../llm";
 import { getAgentPrompt } from "../personality";
+import { getMarketOverview, getSectorPerformance } from "../tools";
 
 // ── Pipeline result types ───────────────────────────
 
@@ -482,6 +483,27 @@ async function generateRecommendation(
 ): Promise<{ formatted: string; recommendation: Record<string, unknown> }> {
   console.log(`[Gold Digger] Node 6: Generating recommendation for ${symbol}`);
 
+  // Enrich with broader market context from market tools
+  let marketContext: Record<string, unknown> = {};
+  try {
+    const [overview, sectors] = await Promise.all([
+      getMarketOverview(),
+      getSectorPerformance(),
+    ]);
+
+    if (!("error" in overview)) {
+      marketContext = {
+        marketSentiment: overview.sentiment,
+        vixLevel: overview.vixLevel,
+        fearGreedEstimate: overview.fearGreedEstimate,
+        topSector: ("topSector" in sectors) ? (sectors as any).topSector : null,
+        weakestSector: ("weakestSector" in sectors) ? (sectors as any).weakestSector : null,
+      };
+    }
+  } catch {
+    console.warn("[Gold Digger] Market context enrichment failed — continuing without it");
+  }
+
   const analysisSummary = {
     symbol,
     asset_type: assetType,
@@ -489,27 +511,32 @@ async function generateRecommendation(
     fundamental_analysis: fundamentals,
     technical_analysis: technical,
     market_sentiment: sentiment,
+    broader_market: Object.keys(marketContext).length > 0 ? marketContext : undefined,
   };
 
   const systemPrompt =
     getAgentPrompt("investment") +
     `
 
-TASK: Generate a detailed investment recommendation.
+TASK: Generate a detailed investment recommendation using the DAILY RADAR format.
 
 Return ONLY a valid JSON object with these fields:
 - action: "BUY", "SELL", "HOLD", or "AVOID"
 - confidence: number between 0 and 100
 - position_type: "LONG", "SHORT", or "NONE"
 - timeframe: "SHORT_TERM", "MEDIUM_TERM", or "LONG_TERM"
-- entry_price: suggested entry price (float)
-- stop_loss: suggested stop-loss price (float)
-- take_profit: suggested take-profit price (float)
+- entry_price: suggested entry price (float) — be SPECIFIC based on current data
+- stop_loss: suggested stop-loss price (float) — calculate based on key support levels
+- take_profit: suggested take-profit price (float) — calculate based on resistance levels or targets
 - risk_level: "LOW", "MEDIUM", or "HIGH"
-- reasoning: 2-3 sentence explanation in your JARVIS voice — be direct, candid, and insightful
+- signal: 1-2 sentence summary of what's happening with this asset RIGHT NOW (price action, trend, catalyst)
+- opportunity: 1-2 sentences on how to profit from this (the trade setup, the edge)
+- reasoning: 2-3 sentence explanation — be direct, candid, and insightful. Include the bull AND bear case
+- risk_warning: 1-2 sentences on what could go wrong — specific scenarios, not generic warnings
 - key_factors: list of 3-4 main factors affecting recommendation
+- action_today: ONE specific, executable thing the user can do RIGHT NOW
 
-Be specific with prices based on current market data. Consider all analysis provided.
+Be specific with prices based on current market data. Quantify the risk/reward ratio.
 ${marketData.dataSource === "unavailable" ? "\nIMPORTANT: Live market data is currently unavailable. Use your best knowledge for price estimates but clearly note they may be outdated." : ""}`;
 
   const messages: LLMMessage[] = [
@@ -549,64 +576,96 @@ ${marketData.dataSource === "unavailable" ? "\nIMPORTANT: Live market data is cu
     }
   }
 
-  // Build formatted output
+  // Build formatted output — Daily Radar format
   const lines: string[] = [];
 
-  lines.push(`INVESTMENT RECOMMENDATION FOR ${symbol.toUpperCase()}`);
+  lines.push(`**${recommendation.action} ${symbol.toUpperCase()}** — Confidence: ${recommendation.confidence}%`);
   lines.push("");
-  lines.push(`Action: ${recommendation.action}`);
-  lines.push(`Confidence: ${recommendation.confidence}%`);
-  lines.push(`Position Type: ${recommendation.position_type}`);
-  lines.push(`Timeframe: ${recommendation.timeframe}`);
-  lines.push(`Risk Level: ${recommendation.risk_level}`);
-  lines.push("");
-  lines.push("Price Targets:");
-  lines.push(`  Entry: ${fmtCurrency(recommendation.entry_price as number)}`);
-  lines.push(`  Stop Loss: ${fmtCurrency(recommendation.stop_loss as number)}`);
-  lines.push(`  Take Profit: ${fmtCurrency(recommendation.take_profit as number)}`);
-  lines.push("");
-  lines.push("Reasoning:");
-  lines.push(`${recommendation.reasoning}`);
-  lines.push("");
-  lines.push("Key Factors:");
-  const keyFactors = Array.isArray(recommendation.key_factors) ? recommendation.key_factors : [];
-  for (const factor of keyFactors) {
-    if (typeof factor === "string") lines.push(`  • ${factor}`);
+
+  // Signal
+  if (recommendation.signal) {
+    lines.push(`**SIGNAL:** ${recommendation.signal}`);
+  } else if (marketData.dataSource === "live") {
+    lines.push(`**SIGNAL:** ${symbol} trading at ${fmtCurrency(marketData.currentPrice)} (${fmtPercent(marketData.priceChange24h)} today), ${marketData.trend}`);
   }
+  lines.push("");
+
+  // Opportunity
+  if (recommendation.opportunity) {
+    lines.push(`**OPPORTUNITY:** ${recommendation.opportunity}`);
+  }
+  lines.push("");
+
+  // Core recommendation
+  lines.push("**TRADE SETUP:**");
+  lines.push(`Position: ${recommendation.position_type} | Timeframe: ${recommendation.timeframe} | Risk: ${recommendation.risk_level}`);
+  lines.push(`Entry: ${fmtCurrency(recommendation.entry_price as number)} | Stop Loss: ${fmtCurrency(recommendation.stop_loss as number)} | Take Profit: ${fmtCurrency(recommendation.take_profit as number)}`);
+
+  // Risk/reward calculation
+  const entry = recommendation.entry_price as number;
+  const stopLoss = recommendation.stop_loss as number;
+  const takeProfit = recommendation.take_profit as number;
+  if (entry && stopLoss && takeProfit && entry > 0 && stopLoss > 0 && takeProfit > 0) {
+    const riskAmount = Math.abs(entry - stopLoss);
+    const rewardAmount = Math.abs(takeProfit - entry);
+    const ratio = riskAmount > 0 ? (rewardAmount / riskAmount).toFixed(1) : "N/A";
+    lines.push(`Risk/Reward Ratio: 1:${ratio}`);
+  }
+  lines.push("");
+
+  // Reasoning (bull + bear case)
+  lines.push(`**ANALYSIS:** ${recommendation.reasoning}`);
+  lines.push("");
+
+  // Key factors
+  const keyFactors = Array.isArray(recommendation.key_factors) ? recommendation.key_factors : [];
+  if (keyFactors.length > 0) {
+    lines.push("**KEY FACTORS:**");
+    for (const factor of keyFactors) {
+      if (typeof factor === "string") lines.push(`• ${factor}`);
+    }
+    lines.push("");
+  }
+
+  // Risk warning
+  if (recommendation.risk_warning) {
+    lines.push(`**RISK:** ${recommendation.risk_warning}`);
+    lines.push("");
+  }
+
+  // Action today
+  if (recommendation.action_today) {
+    lines.push(`**ACTION TODAY:** ${recommendation.action_today}`);
+    lines.push("");
+  }
+
+  // Supporting analysis
+  lines.push("---");
+  lines.push("");
 
   if (fundamentals?.summary) {
+    lines.push(`**Fundamentals:** ${fundamentals.summary}`);
     lines.push("");
-    lines.push("Fundamental Summary:");
-    lines.push(fundamentals.summary);
   }
 
+  lines.push(`**Technicals:** ${technical.interpretation}`);
   lines.push("");
-  lines.push("Technical View:");
-  lines.push(technical.interpretation);
+  lines.push(`**Sentiment:** ${sentiment.interpretation}`);
   lines.push("");
-  lines.push("Market Sentiment:");
-  lines.push(sentiment.interpretation);
 
-  lines.push("");
-  lines.push("---");
-
+  // Market data footer
   if (marketData.dataSource === "live") {
-    lines.push(`Current Price: ${fmtCurrency(marketData.currentPrice)}`);
-    lines.push(`24h Change: ${fmtPercent(marketData.priceChange24h)}`);
-    lines.push(`Trend: ${marketData.trend.toUpperCase()}`);
-    lines.push(`SMA-20: ${fmtCurrency(marketData.sma20)} | SMA-50: ${fmtCurrency(marketData.sma50)}`);
-    lines.push(`52-Week Range: ${fmtCurrency(marketData.low52w)} — ${fmtCurrency(marketData.high52w)}`);
+    lines.push("---");
+    lines.push(`Live Data: ${fmtCurrency(marketData.currentPrice)} | ${fmtPercent(marketData.priceChange24h)} today | ${marketData.trend.toUpperCase()}`);
+    lines.push(`SMA-20: ${fmtCurrency(marketData.sma20)} | SMA-50: ${fmtCurrency(marketData.sma50)} | 52W: ${fmtCurrency(marketData.low52w)}–${fmtCurrency(marketData.high52w)}`);
   } else {
-    lines.push("⚠ IMPORTANT: Live market data was unavailable at the time of analysis.");
-    lines.push("Price targets and technical indicators above are estimates from the LLM's training data and may be significantly outdated.");
-    lines.push("Please verify current prices before making any decisions.");
+    lines.push("---");
+    lines.push("⚠ Live market data was unavailable. Price targets are estimates — verify before acting.");
   }
 
   lines.push("");
   lines.push(
-    "---\nDisclaimer: This is analysis only, not financial advice. " +
-    "Past performance does not guarantee future results. " +
-    "Always do your own research before making investment decisions."
+    "*Not financial advice. Past performance ≠ future results. Always do your own research.*"
   );
 
   return { formatted: lines.join("\n"), recommendation };

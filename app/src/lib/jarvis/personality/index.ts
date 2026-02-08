@@ -6,4 +6,6 @@ export {
   formatGreeting,
   addPersonalityWrapper,
   summarizeContext,
+  getUserProfileContext,
+  clearProfileCache,
 } from "./jarvis-persona";

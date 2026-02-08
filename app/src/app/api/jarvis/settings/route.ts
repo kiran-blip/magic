@@ -14,10 +14,10 @@ import {
   updateConfig,
   loadConfig,
   saveConfig,
-  isFilesystemWritable,
-  resetFsCache,
   type GoldDiggerConfig,
+  type UserProfile,
 } from "@/lib/jarvis/config";
+import { clearProfileCache } from "@/lib/jarvis/personality";
 
 async function authenticate() {
   const cookieStore = await cookies();
@@ -66,8 +66,16 @@ export async function PUT(req: NextRequest) {
     if (body.preferences && typeof body.preferences === "object") {
       updates.preferences = body.preferences;
     }
+    if (body.userProfile && typeof body.userProfile === "object") {
+      updates.userProfile = body.userProfile as UserProfile;
+    }
 
     const { persisted } = updateConfig(updates);
+
+    // Clear cached profile so personality system picks up changes immediately
+    if (updates.userProfile) {
+      clearProfileCache();
+    }
     const publicConfig = getPublicConfig();
 
     return NextResponse.json({
@@ -107,6 +115,9 @@ export async function POST(req: NextRequest) {
     if (body.preferences) {
       config.preferences = { ...config.preferences, ...body.preferences };
     }
+    if (body.userProfile && typeof body.userProfile === "object") {
+      config.userProfile = body.userProfile as UserProfile;
+    }
 
     // Validate: at least one key must be present
     if (!config.anthropicApiKey && !config.openrouterApiKey) {
@@ -122,6 +133,11 @@ export async function POST(req: NextRequest) {
     }
 
     const persisted = saveConfig(config);
+
+    // Clear cached profile so personality system picks up new profile immediately
+    if (config.userProfile) {
+      clearProfileCache();
+    }
 
     return NextResponse.json({
       success: true,
