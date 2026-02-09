@@ -1,55 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-
-/* ── Types ─────────────────────────────────────────────── */
-
-interface Agent {
-  id: string; role: string; name: string; shortName: string;
-  description: string; color: string; capabilities: string[];
-  status: "idle" | "thinking" | "analyzing" | "proposing" | "waiting";
-  lastActive: string; messagesProcessed: number; proposalsMade: number;
-}
-interface RiskAssessment { level: "low" | "medium" | "high"; factors: string[]; }
-interface Proposal {
-  id: string; timestamp: string; sender: string; senderName: string;
-  senderShortName: string; senderColor: string; recipients: string[];
-  type: "PROPOSAL"; priority: "high" | "medium" | "low"; subject: string;
-  payload: Record<string, unknown>;
-  proposalType: "trade" | "rebalance" | "research" | "alert" | "strategy_change";
-  summary: string; reasoning: string; riskAssessment: RiskAssessment;
-  neuralConfidence: number; expectedReturn: number;
-  requiredApprovals: string[];
-  approvals: Array<{ role: string; approved: boolean; timestamp?: string }>;
-  ceoDecision: null | boolean; status: "pending" | "approved" | "rejected";
-}
-interface ActivityEntry {
-  id: string; timestamp: string; sender: string; senderName: string;
-  senderColor: string; recipients: string[]; type: string;
-  priority: "high" | "medium" | "low"; subject: string;
-  payload: Record<string, unknown>; status: string;
-}
-interface Directive {
-  id: string; timestamp: string;
-  type: "risk_tolerance" | "focus_sectors" | "max_position_size" | "trading_style" | "general";
-  value: string; active: boolean;
-}
-interface Metrics {
-  totalProposals: number; approvedProposals: number; rejectedProposals: number;
-  approvalRate: number; avgConfidence: number; totalReturn: number;
-  messagesProcessed: number; activeDirectives: number;
-}
-interface FleetData {
-  running: boolean; agents: Agent[]; pendingProposals: Proposal[];
-  allProposals: Proposal[]; activityLog: ActivityEntry[];
-  directives: Directive[]; metrics: Metrics;
-}
-interface BrokerAccount {
-  connected: boolean;
-  account?: { portfolioValue: number; buyingPower: number; cash: number; equity: number };
-  market?: { isOpen: boolean };
-}
+import { useFleetStream } from "@/hooks/useFleetStream";
+import type { FleetData, BrokerAccount } from "@/hooks/useFleetStream";
 
 /* ── Helpers ────────────────────────────────────────────── */
 
@@ -89,33 +43,11 @@ const RISK_STYLE: Record<string, string> = {
 
 export default function FleetDashboard() {
   const router = useRouter();
-  const [fleet, setFleet] = useState<FleetData | null>(null);
-  const [broker, setBroker] = useState<BrokerAccount | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const { fleet, broker, connected, reconnecting, loading, refresh } = useFleetStream();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [deciding, setDeciding] = useState<string | null>(null);
   const [activityLimit, setActivityLimit] = useState(8);
-
-  const load = useCallback(async () => {
-    try {
-      const [f, b] = await Promise.all([
-        fetch("/api/golddigger/fleet").then(r => r.ok ? r.json() : null),
-        fetch("/api/golddigger/broker").then(r => r.ok ? r.json() : null),
-      ]);
-      if (f) setFleet(f);
-      if (b) setBroker(b);
-    } catch { /* non-critical */ }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    if (!autoRefresh || deciding) return;
-    const id = setInterval(load, 5000);
-    return () => clearInterval(id);
-  }, [autoRefresh, deciding, load]);
 
   const decide = useCallback(async (pid: string, approved: boolean) => {
     setDeciding(pid);
@@ -127,10 +59,11 @@ export default function FleetDashboard() {
       });
       setNotes(p => { const u = { ...p }; delete u[pid]; return u; });
       setExpanded(null);
-      await load();
+      // Decision event will come through SSE automatically, but refresh just in case
+      refresh();
     } catch { /* */ }
     setDeciding(null);
-  }, [notes, load]);
+  }, [notes, refresh]);
 
   if (loading) {
     return (
@@ -154,18 +87,19 @@ export default function FleetDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
+          <span
             className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              autoRefresh
+              connected
                 ? "bg-accent/10 text-accent border-accent/20"
-                : "text-muted border-border hover:text-foreground hover:bg-card"
+                : reconnecting
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse"
+                  : "text-muted border-border"
             }`}
           >
-            {autoRefresh ? "Live" : "Paused"}
-          </button>
+            {connected ? "Live" : reconnecting ? "Reconnecting" : "Offline"}
+          </span>
           <button
-            onClick={load}
+            onClick={refresh}
             className="px-3 py-1.5 rounded-lg text-xs text-muted border border-border hover:text-foreground hover:bg-card transition-colors"
           >
             Refresh
@@ -203,9 +137,9 @@ export default function FleetDashboard() {
         <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between">
           <div>
             <p className="text-sm text-muted">No broker connected — set up in Settings to start trading</p>
-            {(broker as BrokerAccount & { error?: string }).error && (
+            {broker.error && (
               <p className="text-xs text-red-400 mt-1">
-                {(broker as BrokerAccount & { error?: string }).error}
+                {broker.error}
               </p>
             )}
           </div>
@@ -367,7 +301,7 @@ export default function FleetDashboard() {
                         {/* Approvals */}
                         <div className="flex items-center gap-3">
                           {p.requiredApprovals.map(r => {
-                            const ok = p.approvals.find(a => a.role === r)?.approved ?? false;
+                            const ok = p.approvals.find(a => (a as Record<string, unknown>).agent === r || (a as Record<string, unknown>).role === r)?.approved ?? false;
                             return (
                               <div key={r} className="flex items-center gap-1.5 text-[10px]">
                                 <div className={`w-4 h-4 rounded flex items-center justify-center text-[8px] font-bold ${

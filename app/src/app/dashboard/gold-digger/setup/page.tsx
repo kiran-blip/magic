@@ -2,15 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { TIER_INFO, type UserTier } from "@/lib/golddigger/tier";
 
 /* ── Step definitions ────────────────────────────── */
 
-type Step = "welcome" | "keys" | "profile" | "preferences" | "test" | "complete";
+type Step = "welcome" | "tier" | "keys" | "profile" | "preferences" | "test" | "complete";
 
-const STEPS: Step[] = ["welcome", "keys", "profile", "preferences", "test", "complete"];
+const STEPS: Step[] = ["welcome", "tier", "keys", "profile", "preferences", "test", "complete"];
 
 const STEP_LABELS: Record<Step, string> = {
   welcome: "Welcome",
+  tier: "Mode",
   keys: "API Keys",
   profile: "Your Profile",
   preferences: "Preferences",
@@ -29,6 +31,9 @@ export default function GoldDiggerSetup() {
   const [enableDisclaimers, setEnableDisclaimers] = useState(true);
   const [enableSafety, setEnableSafety] = useState(true);
   const [enablePersonality, setEnablePersonality] = useState(true);
+
+  // Tier selection
+  const [selectedTier, setSelectedTier] = useState<UserTier>("newbie");
 
   // User profile state
   const [riskTolerance, setRiskTolerance] = useState<string>("moderate");
@@ -106,6 +111,7 @@ export default function GoldDiggerSetup() {
             focusAreas,
             experienceLevel,
           },
+          userTier: selectedTier,
         }),
       });
 
@@ -148,6 +154,51 @@ export default function GoldDiggerSetup() {
               <div className="text-xs text-muted">{f.desc}</div>
             </div>
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Step: Tier Selection ───────────────────────── */
+
+  function renderTier() {
+    const tiers: UserTier[] = ["newbie", "intermediate", "expert"];
+    return (
+      <div className="space-y-6">
+        <div className="text-center space-y-2 mb-6">
+          <h2 className="text-xl font-bold text-foreground">How do you want to use Gold Digger?</h2>
+          <p className="text-muted text-sm">Pick a mode. You can change this anytime in Settings.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {tiers.map((t) => {
+            const info = TIER_INFO[t];
+            const active = selectedTier === t;
+            return (
+              <button
+                key={t}
+                onClick={() => setSelectedTier(t)}
+                className={`text-left p-5 rounded-xl border-2 transition-all hover:scale-[1.02] ${
+                  active
+                    ? `${info.borderColor} ${info.bgColor}`
+                    : "border-border bg-background hover:border-accent/30"
+                }`}
+              >
+                <div className="text-3xl mb-3">{info.emoji}</div>
+                <div className={`text-base font-semibold mb-1 ${active ? info.color : "text-foreground"}`}>
+                  {info.label}
+                </div>
+                <div className="text-xs text-muted mb-2">{info.tagline}</div>
+                <div className="text-[11px] text-muted/70 leading-relaxed">{info.description}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="bg-card border border-border rounded-lg p-4 text-xs text-muted">
+          <div className="font-medium text-foreground mb-2">Gold Digger is a fully automated AI investment company.</div>
+          <div>No matter which mode you pick, the AI fleet works behind the scenes to find opportunities and manage your investments.
+          The mode just controls how much of that process you see.</div>
         </div>
       </div>
     );
@@ -557,6 +608,7 @@ export default function GoldDiggerSetup() {
       {/* Content */}
       <div className="bg-card border border-border rounded-xl p-6 min-h-[400px] overflow-y-auto max-h-[70vh]">
         {step === "welcome" && renderWelcome()}
+        {step === "tier" && renderTier()}
         {step === "keys" && renderKeys()}
         {step === "profile" && renderProfile()}
         {step === "preferences" && renderPreferences()}

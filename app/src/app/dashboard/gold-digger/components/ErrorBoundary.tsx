@@ -4,7 +4,8 @@ import React from "react";
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
-  fallback?: React.ReactNode;
+  fallback?: React.ReactNode | ((error: Error, reset: () => void) => React.ReactNode);
+  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
 }
 
 interface ErrorBoundaryState {
@@ -24,11 +25,21 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error("[Gold Digger] Component error:", error, errorInfo);
+    if (this.props.onError) {
+      this.props.onError(error, errorInfo);
+    }
   }
 
+  resetError = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
   render() {
-    if (this.state.hasError) {
+    if (this.state.hasError && this.state.error) {
       if (this.props.fallback) {
+        if (typeof this.props.fallback === "function") {
+          return this.props.fallback(this.state.error, this.resetError);
+        }
         return this.props.fallback;
       }
 
@@ -49,11 +60,16 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
                 : "An unexpected error occurred."}
             </p>
             <button
-              onClick={() => this.setState({ hasError: false, error: null })}
+              onClick={this.resetError}
               className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs font-medium transition-colors"
             >
               Try Again
             </button>
+            {process.env.NODE_ENV === "development" && (
+              <pre className="mt-4 p-3 bg-background border border-border rounded-lg text-[10px] text-muted text-left overflow-auto max-h-32">
+                {this.state.error.stack?.slice(0, 500)}
+              </pre>
+            )}
           </div>
         </div>
       );

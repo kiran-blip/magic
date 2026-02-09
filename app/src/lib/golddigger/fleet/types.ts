@@ -199,3 +199,25 @@ export interface FleetState {
   directives: Directive[];
   metrics: FleetMetrics;
 }
+
+/**
+ * Real-time fleet event types for SSE streaming.
+ */
+export type FleetEventType =
+  | 'message'          // New fleet message
+  | 'proposal'         // New or updated proposal
+  | 'decision'         // CEO decision on proposal
+  | 'verification'     // Verification approval/rejection
+  | 'agent_status'     // Agent status change
+  | 'directive'        // New directive
+  | 'metrics'          // Metrics update
+  | 'heartbeat';       // Keep-alive ping
+
+/**
+ * Fleet event payload for SSE streaming.
+ */
+export interface FleetEvent {
+  type: FleetEventType;
+  timestamp: string;
+  data: Record<string, unknown>;
+}

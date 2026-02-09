@@ -78,6 +78,19 @@ export interface RelatedAssetsResult {
   error?: string;
 }
 
+export interface QuoteData {
+  symbol: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  volume: number;
+}
+
+export interface QuoteResult {
+  data?: QuoteData;
+  error?: string;
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -580,6 +593,40 @@ export async function getRelatedAssets(
     return {
       symbol: symbol.toUpperCase(),
       peers: [],
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Gets a real-time quote for a symbol from Yahoo Finance
+ * @param symbol - Stock symbol to fetch quote for
+ * @returns Current price and change data
+ */
+export async function getQuote(symbol: string): Promise<QuoteResult> {
+  try {
+    const ticker = symbol.toUpperCase();
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=5d&interval=1d`;
+    const data = await fetchYahooFinance(url);
+    const chartData = extractChartData(data);
+
+    if (!chartData) {
+      return {
+        error: `No price data available for ${ticker}`,
+      };
+    }
+
+    return {
+      data: {
+        symbol: ticker,
+        price: chartData.price,
+        change: chartData.change,
+        changePercent: chartData.change,
+        volume: chartData.volume,
+      },
+    };
+  } catch (error) {
+    return {
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }

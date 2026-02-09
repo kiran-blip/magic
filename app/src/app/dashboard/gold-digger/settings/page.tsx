@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useTier } from "../components/TierProvider";
+import { TIER_INFO, type UserTier } from "@/lib/golddigger/tier";
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -227,8 +229,8 @@ const BROKER_OPTIONS: BrokerOption[] = [
     name: "Built-in Simulator",
     desc: "No account needed — simulated trading with real market data",
     regions: "Available everywhere",
-    status: "coming_soon",
-    note: "Perfect for learning, testing, or regions without broker API access. Uses real-time market data with simulated order execution.",
+    status: "available",
+    note: "Perfect for learning, testing, or regions without broker API access. Uses real-time Yahoo Finance data with simulated order execution.",
     steps: [
       { step: 1, title: "Set capital", desc: "Choose your starting virtual balance (default: $100,000)" },
       { step: 2, title: "Start trading", desc: "Fleet uses real market data with simulated order execution" },
@@ -238,6 +240,54 @@ const BROKER_OPTIONS: BrokerOption[] = [
 ];
 
 /* ── Component ──────────────────────────────────────────── */
+
+/* ── Tier Selector Component ──────────────────────────── */
+
+function TierSelector() {
+  const { tier, setTier } = useTier();
+  const tiers: UserTier[] = ["newbie", "intermediate", "expert"];
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-border">
+        <div className="text-sm font-medium text-foreground">Experience Mode</div>
+        <p className="text-xs text-muted mt-0.5">
+          Controls which features you see. Gold Digger works the same under the hood — this just adjusts the dashboard.
+        </p>
+      </div>
+      <div className="p-5 grid grid-cols-3 gap-3">
+        {tiers.map((t) => {
+          const info = TIER_INFO[t];
+          const active = tier === t;
+          return (
+            <button
+              key={t}
+              onClick={() => setTier(t)}
+              className={`text-left p-4 rounded-xl border-2 transition-all hover:scale-[1.02] ${
+                active
+                  ? `${info.borderColor} ${info.bgColor}`
+                  : "border-border bg-background hover:border-accent/30"
+              }`}
+            >
+              <div className="text-2xl mb-2">{info.emoji}</div>
+              <div className={`text-sm font-semibold mb-0.5 ${active ? info.color : "text-foreground"}`}>
+                {info.label}
+              </div>
+              <div className="text-[11px] text-muted leading-relaxed">
+                {info.tagline}
+              </div>
+              <div className="text-[10px] text-muted/60 mt-2 leading-relaxed">
+                {info.description}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Settings Component ─────────────────────────── */
 
 export default function GoldDiggerSettings() {
   const router = useRouter();
@@ -263,6 +313,7 @@ export default function GoldDiggerSettings() {
   const [brokerStatus, setBrokerStatus] = useState<BrokerStatus | null>(null);
   const [alpacaKey, setAlpacaKey] = useState("");
   const [alpacaSecret, setAlpacaSecret] = useState("");
+  const [simulatorCapital, setSimulatorCapital] = useState("100000");
   const [brokerConnecting, setBrokerConnecting] = useState(false);
   const [brokerDisconnecting, setBrokerDisconnecting] = useState(false);
   const [brokerError, setBrokerError] = useState("");
@@ -338,29 +389,40 @@ export default function GoldDiggerSettings() {
   /* ── Broker connect / disconnect ─────────────────────── */
 
   async function connectBroker() {
-    if (!alpacaKey.trim() || !alpacaSecret.trim()) {
-      setBrokerError("Both API key and secret are required");
-      return;
-    }
     setBrokerConnecting(true);
     setBrokerError("");
     setBrokerSuccess("");
 
     try {
-      const res = await fetch("/api/golddigger/broker", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      let payload: Record<string, unknown>;
+
+      if (brokerProvider === "simulator") {
+        const capital = parseInt(simulatorCapital) || 100000;
+        payload = { provider: "simulator", startingCapital: capital };
+      } else {
+        if (!alpacaKey.trim() || !alpacaSecret.trim()) {
+          setBrokerError("Both API key and secret are required");
+          setBrokerConnecting(false);
+          return;
+        }
+        payload = {
+          provider: "alpaca",
           apiKey: alpacaKey.trim(),
           apiSecret: alpacaSecret.trim(),
           tradingMode: "paper",
-        }),
+        };
+      }
+
+      const res = await fetch("/api/golddigger/broker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) {
         setBrokerError(data.error || "Connection failed");
       } else {
-        setBrokerSuccess(`Connected to Alpaca paper trading`);
+        setBrokerSuccess(data.message || "Connected successfully");
         setAlpacaKey("");
         setAlpacaSecret("");
         await loadBroker();
@@ -483,6 +545,11 @@ export default function GoldDiggerSettings() {
           </div>
         </div>
       )}
+
+      {/* ══════════════════════════════════════════════════ */}
+      {/* ── EXPERIENCE TIER ──────────────────────────── */}
+      {/* ══════════════════════════════════════════════════ */}
+      <TierSelector />
 
       {/* ══════════════════════════════════════════════════ */}
       {/* ── BROKER CONNECTION ─────────────────────────── */}
@@ -700,10 +767,39 @@ export default function GoldDiggerSettings() {
                     />
                   </div>
                 </div>
-
                 <div className="flex items-center gap-2 text-[11px] text-muted">
                   <div className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
                   Paper trading mode — uses simulated funds, no real money at risk
+                </div>
+              </>
+            )}
+
+            {/* Simulator connection form */}
+            {brokerProvider === "simulator" && (
+              <>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted mb-1 block">Starting Virtual Capital</label>
+                    <div className="flex gap-2">
+                      {["10000", "50000", "100000", "500000"].map(v => (
+                        <button
+                          key={v}
+                          onClick={() => setSimulatorCapital(v)}
+                          className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                            simulatorCapital === v
+                              ? "bg-accent/10 text-accent border-accent/20"
+                              : "text-muted border-border hover:text-foreground hover:bg-card"
+                          }`}
+                        >
+                          ${parseInt(v).toLocaleString()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-muted">
+                  <div className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
+                  Zero setup — uses real Yahoo Finance data with simulated execution
                 </div>
               </>
             )}
@@ -720,7 +816,7 @@ export default function GoldDiggerSettings() {
               </div>
             )}
 
-            {/* Connect button */}
+            {/* Connect button — Alpaca */}
             {brokerProvider === "alpaca" && (
               <button
                 onClick={connectBroker}
@@ -731,14 +827,25 @@ export default function GoldDiggerSettings() {
               </button>
             )}
 
+            {/* Connect button — Simulator */}
+            {brokerProvider === "simulator" && (
+              <button
+                onClick={connectBroker}
+                disabled={brokerConnecting}
+                className="w-full px-4 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {brokerConnecting ? "Starting simulator..." : "Start Simulator"}
+              </button>
+            )}
+
             {/* Coming soon notice for other providers */}
-            {brokerProvider !== "alpaca" && (
+            {brokerProvider !== "alpaca" && brokerProvider !== "simulator" && (
               <div className="bg-accent/5 border border-accent/20 rounded-lg px-4 py-3 text-center">
                 <p className="text-xs text-accent font-medium">
                   {BROKER_OPTIONS.find(b => b.id === brokerProvider)?.name} integration coming soon
                 </p>
                 <p className="text-[11px] text-muted mt-1">
-                  Use Alpaca for now, or switch when this provider is available
+                  Use Alpaca or the Built-in Simulator for now
                 </p>
               </div>
             )}

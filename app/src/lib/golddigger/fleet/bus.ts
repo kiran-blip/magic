@@ -14,6 +14,8 @@ import {
   AgentStatus,
   ProposalApproval,
   VerificationStatus,
+  FleetEvent,
+  FleetEventType,
 } from './types';
 import { computeVerificationStatus } from './verification';
 import { FLEET_AGENTS } from './agents';
@@ -28,6 +30,7 @@ class FleetBus {
   private directives: Directive[] = [];
   private agentStatuses: Map<AgentRole, AgentStatusInfo> = new Map();
   private listeners: Map<AgentRole | 'CEO', ((msg: FleetMessage) => void)[]> = new Map();
+  private globalListeners: ((event: FleetEvent) => void)[] = [];
 
   constructor() {
     this.initializeAgentStatuses();
@@ -124,6 +127,9 @@ class FleetBus {
       this.notifyListeners(recipient, message);
     });
 
+    // Emit to SSE streams
+    this.emitEvent('message', { message });
+
     return message;
   }
 
@@ -160,6 +166,9 @@ class FleetBus {
     fullProposal.recipients.forEach((recipient) => {
       this.notifyListeners(recipient, fullProposal);
     });
+
+    // Emit to SSE streams
+    this.emitEvent('proposal', { proposal: fullProposal });
 
     return fullProposal;
   }
@@ -214,6 +223,9 @@ class FleetBus {
     proposal.recipients.forEach((recipient) => {
       this.notifyListeners(recipient, decisionMsg);
     });
+
+    // Emit to SSE streams
+    this.emitEvent('decision', { proposal, decision: proposal.ceoDecision });
 
     return proposal;
   }
@@ -320,6 +332,9 @@ class FleetBus {
     this.agentStatuses.forEach((_, role) => {
       this.notifyListeners(role, directiveMsg);
     });
+
+    // Emit to SSE streams
+    this.emitEvent('directive', { directive: fullDirective });
 
     return fullDirective;
   }
@@ -428,6 +443,9 @@ class FleetBus {
       Object.assign(currentStatus, status);
       currentStatus.lastActive = new Date().toISOString();
       persistence.saveAgentMetrics(role, currentStatus);
+
+      // Emit to SSE streams
+      this.emitEvent('agent_status', { role, status: currentStatus });
     }
   }
 
@@ -505,6 +523,37 @@ class FleetBus {
     };
   }
 
+  // ── Global Event Emitter (for SSE streaming) ─────────────────────────────
+
+  /**
+   * Emit a typed event to all global listeners (SSE streams).
+   */
+  private emitEvent(type: FleetEventType, data: Record<string, unknown>): void {
+    const event: FleetEvent = { type, timestamp: new Date().toISOString(), data };
+    for (const cb of this.globalListeners) {
+      try { cb(event); } catch (err) { console.error('[Fleet Bus] Global listener error:', err); }
+    }
+  }
+
+  /**
+   * Subscribe to all fleet events (for SSE streaming).
+   * Returns an unsubscribe function.
+   */
+  onEvent(callback: (event: FleetEvent) => void): () => void {
+    this.globalListeners.push(callback);
+    return () => {
+      const idx = this.globalListeners.indexOf(callback);
+      if (idx > -1) this.globalListeners.splice(idx, 1);
+    };
+  }
+
+  /**
+   * Get the current number of global (SSE) listeners.
+   */
+  getStreamListenerCount(): number {
+    return this.globalListeners.length;
+  }
+
   /**
    * Clear all data (for testing).
    * Note: This clears only in-memory state; persistent SQLite data remains intact
@@ -516,6 +565,7 @@ class FleetBus {
     this.proposals = [];
     this.directives = [];
     this.listeners.clear();
+    this.globalListeners = [];
     this.initializeAgentStatuses();
   }
 
@@ -613,6 +663,9 @@ class FleetBus {
     console.log(
       `[Fleet Bus] ${approval.agent} ${approval.approved ? 'verified' : 'disputed'} proposal ${proposalId} — status: ${proposal.verificationStatus}`,
     );
+
+    // Emit to SSE streams
+    this.emitEvent('verification', { proposal, approval });
 
     return proposal;
   }

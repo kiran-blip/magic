@@ -132,6 +132,9 @@ export async function PUT(req: NextRequest) {
     if (body.userProfile && typeof body.userProfile === "object") {
       updates.userProfile = body.userProfile as UserProfile;
     }
+    if (body.userTier && ["newbie", "intermediate", "expert"].includes(body.userTier)) {
+      updates.userTier = body.userTier;
+    }
 
     const { persisted } = updateConfig(updates);
 

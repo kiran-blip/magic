@@ -16,6 +16,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import {
+  AlpacaBroker,
+  SimulatorBroker,
   getBroker,
   initBroker,
   disconnectBroker,
@@ -25,6 +27,9 @@ import {
   removeBrokerCredentials,
   checkLiveReadiness,
   saveBrokerConfig,
+  getSimulator,
+  initSimulator,
+  disconnectSimulator,
   type TradingMode,
 } from "@/lib/golddigger/broker";
 
@@ -51,6 +56,20 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const view = searchParams.get("view");
   const config = getBrokerConfig();
+
+  // Check for simulator first
+  if (config.provider === "simulator") {
+    let sim = getSimulator();
+    if (!sim) {
+      sim = initSimulator(config.simulatorStartingCapital);
+      await sim.testConnection();
+    }
+    if (sim.isConnected()) {
+      return handleConnectedRequest(view, sim, config);
+    }
+  }
+
+  // Check Alpaca broker
   const broker = getBroker();
 
   // Not connected yet — try to auto-init from stored credentials
@@ -83,7 +102,7 @@ export async function GET(request: NextRequest) {
 
 async function handleConnectedRequest(
   view: string | null,
-  broker: NonNullable<ReturnType<typeof getBroker>>,
+  broker: AlpacaBroker | SimulatorBroker,
   config: ReturnType<typeof getBrokerConfig>
 ) {
   try {
@@ -192,12 +211,39 @@ export async function POST(request: NextRequest) {
   // Connect broker — store credentials and initialize
   try {
     const body = await request.json();
-    const { apiKey, apiSecret, tradingMode } = body as {
-      apiKey: string;
-      apiSecret: string;
+    const { provider, apiKey, apiSecret, tradingMode, startingCapital } = body as {
+      provider?: string;
+      apiKey?: string;
+      apiSecret?: string;
       tradingMode?: TradingMode;
+      startingCapital?: number;
     };
 
+    // ── Simulator connection ──
+    if (provider === "simulator") {
+      const capital = startingCapital ?? 100_000;
+      saveBrokerConfig({
+        provider: "simulator",
+        tradingMode: "paper",
+        tradingEnabled: true,
+        simulatorStartingCapital: capital,
+        lastConnectedAt: new Date().toISOString(),
+      });
+
+      // Disconnect any existing Alpaca broker
+      disconnectBroker();
+
+      const sim = initSimulator(capital);
+      const test = await sim.testConnection();
+      return NextResponse.json({
+        connected: true,
+        tradingMode: "paper" as TradingMode,
+        account: test.account,
+        message: `Simulator connected with ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(capital)} virtual capital`,
+      });
+    }
+
+    // ── Alpaca connection ──
     if (!apiKey || !apiSecret) {
       return NextResponse.json(
         { error: "API key and secret are required" },
@@ -208,8 +254,12 @@ export async function POST(request: NextRequest) {
     // Always default to paper mode
     const mode: TradingMode = tradingMode === "live" ? "live" : "paper";
 
+    // Disconnect any existing simulator
+    disconnectSimulator();
+
     // Store encrypted credentials
     storeBrokerCredentials(apiKey, apiSecret, mode);
+    saveBrokerConfig({ provider: "alpaca" });
 
     // Initialize broker
     const broker = initBroker({ apiKey, apiSecret, tradingMode: mode });
@@ -248,6 +298,8 @@ export async function DELETE() {
 
   removeBrokerCredentials();
   disconnectBroker();
+  disconnectSimulator();
+  saveBrokerConfig({ provider: "alpaca", tradingEnabled: false });
 
   return NextResponse.json({
     connected: false,

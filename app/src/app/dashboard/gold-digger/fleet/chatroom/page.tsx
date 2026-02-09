@@ -1,13 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useFleetStream } from "@/hooks/useFleetStream";
 
 /* ── Types ──────────────────────────────────────────────── */
-
-interface Agent {
-  id: string; role: string; name: string; shortName: string;
-  color: string; status: string;
-}
 
 interface FleetMessage {
   id: string; timestamp: string; sender: string; senderName: string;
@@ -35,13 +31,17 @@ const TYPE_STYLE: Record<string, string> = {
 /* ── Component ──────────────────────────────────────────── */
 
 export default function FleetChatroom() {
-  const [messages, setMessages] = useState<FleetMessage[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const { fleet, connected, reconnecting } = useFleetStream();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [directiveType, setDirectiveType] = useState<string>("general");
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
+  const prevMessageCountRef = useRef(0);
+
+  // Derive messages and agents from fleet stream
+  const messages: FleetMessage[] = (fleet?.activityLog ?? []) as FleetMessage[];
+  const agents = fleet?.agents ?? [];
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -49,34 +49,13 @@ export default function FleetChatroom() {
     isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
   }, []);
 
-  const load = useCallback(async () => {
-    try {
-      const [logRes, agentRes] = await Promise.all([
-        fetch("/api/golddigger/fleet?action=log&limit=100"),
-        fetch("/api/golddigger/fleet?action=agents"),
-      ]);
-      if (logRes.ok) {
-        const data = await logRes.json();
-        setMessages(data.messages ?? []);
-      }
-      if (agentRes.ok) {
-        const data = await agentRes.json();
-        setAgents(data.agents ?? []);
-      }
-    } catch { /* */ }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
+  // Auto-scroll when new messages arrive (only if already at bottom)
   useEffect(() => {
-    const id = setInterval(load, 3000);
-    return () => clearInterval(id);
-  }, [load]);
-
-  useEffect(() => {
-    if (isAtBottomRef.current && scrollRef.current) {
+    if (messages.length > prevMessageCountRef.current && isAtBottomRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length]);
 
   const send = useCallback(async () => {
     if (!input.trim() || sending) return;
@@ -88,10 +67,10 @@ export default function FleetChatroom() {
         body: JSON.stringify({ action: "directive", type: directiveType, value: input.trim() }),
       });
       setInput("");
-      await load();
+      // New directive will arrive via SSE automatically
     } catch { /* */ }
     setSending(false);
-  }, [input, sending, load]);
+  }, [input, sending, directiveType]);
 
   const activeAgents = agents.filter(a => a.status !== "idle");
 
@@ -100,7 +79,10 @@ export default function FleetChatroom() {
 
       {/* ── Agent status bar ─────────────────────────────── */}
       <div className="flex items-center gap-3 pb-3 border-b border-border mb-0 overflow-x-auto">
-        <span className="text-xs text-muted shrink-0">
+        <span className="text-xs text-muted shrink-0 flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${
+            connected ? "bg-success" : reconnecting ? "bg-amber-400 animate-pulse" : "bg-border"
+          }`} />
           {activeAgents.length > 0 ? `${activeAgents.length} active` : "All idle"}
         </span>
         <div className="flex gap-2">

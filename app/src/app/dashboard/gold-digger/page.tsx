@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useTier } from "./components/TierProvider";
 
 interface Message {
   role: "user" | "assistant";
@@ -209,8 +210,20 @@ const LOADING_STAGES = [
   "Saving to memory...",
 ] as const;
 
+// ── Newbie-specific suggestions (friendly, hands-off language) ─────────────
+
+const NEWBIE_SUGGESTIONS = [
+  "How is my portfolio doing?",
+  "Is now a good time to invest?",
+  "Help me start investing with $500",
+  "What should I know about investing?",
+  "Find me the best investment opportunities right now",
+  "Explain what Gold Digger does in simple terms",
+];
+
 export default function GoldDiggerPage() {
   const router = useRouter();
+  const { tier } = useTier();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -588,88 +601,92 @@ export default function GoldDiggerPage() {
               <div className="flex flex-col items-center justify-center h-full py-8">
                 {/* Welcome */}
                 <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-4">
-                  <span className="text-2xl">⛏️</span>
+                  <span className="text-2xl">{"\u26CF\uFE0F"}</span>
                 </div>
                 <h2 className="text-lg font-semibold text-foreground mb-1">
-                  Welcome to Gold Digger
+                  {tier === "newbie" ? "Welcome to Gold Digger" : "Gold Digger AGI"}
                 </h2>
                 <p className="text-sm text-muted mb-6 text-center max-w-lg">
-                  Your AI financial assistant. Choose what you&apos;d like to do:
+                  {tier === "newbie"
+                    ? "Your personal AI investment company. Just ask a question and I'll handle the rest."
+                    : "Your AI financial assistant. Choose what you'd like to do:"}
                 </p>
 
-                {/* Feature cards — 3 main modes */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl w-full mb-6">
-                  {/* Investment card */}
-                  <button
-                    onClick={() => handleFeatureCardClick("investment")}
-                    className={`text-left p-4 rounded-xl border-2 transition-all hover:scale-[1.02] ${
-                      mode === "investment"
-                        ? "border-success/40 bg-success/5"
-                        : "border-border bg-background hover:border-success/30"
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">📈</div>
-                    <div className="text-sm font-semibold text-foreground mb-1">Analyze Investments</div>
-                    <div className="text-xs text-muted leading-relaxed">
-                      Get stock analysis, price targets, buy/sell/hold recommendations, and portfolio insights
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/10 text-success/70">Stocks</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/10 text-success/70">Crypto</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/10 text-success/70">ETFs</span>
-                    </div>
-                  </button>
+                {/* Feature cards — only shown for intermediate/expert */}
+                {tier !== "newbie" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl w-full mb-6">
+                    {/* Investment card */}
+                    <button
+                      onClick={() => handleFeatureCardClick("investment")}
+                      className={`text-left p-4 rounded-xl border-2 transition-all hover:scale-[1.02] ${
+                        mode === "investment"
+                          ? "border-success/40 bg-success/5"
+                          : "border-border bg-background hover:border-success/30"
+                      }`}
+                    >
+                      <div className="text-2xl mb-2">{"\uD83D\uDCC8"}</div>
+                      <div className="text-sm font-semibold text-foreground mb-1">Analyze Investments</div>
+                      <div className="text-xs text-muted leading-relaxed">
+                        Get stock analysis, price targets, buy/sell/hold recommendations, and portfolio insights
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/10 text-success/70">Stocks</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/10 text-success/70">Crypto</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/10 text-success/70">ETFs</span>
+                      </div>
+                    </button>
 
-                  {/* Research card */}
-                  <button
-                    onClick={() => handleFeatureCardClick("research")}
-                    className={`text-left p-4 rounded-xl border-2 transition-all hover:scale-[1.02] ${
-                      mode === "research"
-                        ? "border-accent/40 bg-accent/5"
-                        : "border-border bg-background hover:border-accent/30"
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">🔍</div>
-                    <div className="text-sm font-semibold text-foreground mb-1">Research Markets</div>
-                    <div className="text-xs text-muted leading-relaxed">
-                      Explore industries, get market sizing (TAM/SAM/SOM), competitive analysis, and opportunity scores
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent/70">Trends</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent/70">Competition</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent/70">Sizing</span>
-                    </div>
-                  </button>
+                    {/* Research card */}
+                    <button
+                      onClick={() => handleFeatureCardClick("research")}
+                      className={`text-left p-4 rounded-xl border-2 transition-all hover:scale-[1.02] ${
+                        mode === "research"
+                          ? "border-accent/40 bg-accent/5"
+                          : "border-border bg-background hover:border-accent/30"
+                      }`}
+                    >
+                      <div className="text-2xl mb-2">{"\uD83D\uDD0D"}</div>
+                      <div className="text-sm font-semibold text-foreground mb-1">Research Markets</div>
+                      <div className="text-xs text-muted leading-relaxed">
+                        Explore industries, get market sizing (TAM/SAM/SOM), competitive analysis, and opportunity scores
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent/70">Trends</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent/70">Competition</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent/70">Sizing</span>
+                      </div>
+                    </button>
 
-                  {/* General card */}
-                  <button
-                    onClick={() => handleFeatureCardClick("general")}
-                    className={`text-left p-4 rounded-xl border-2 transition-all hover:scale-[1.02] ${
-                      mode === "general"
-                        ? "border-blue-500/40 bg-blue-500/5"
-                        : "border-border bg-background hover:border-blue-500/30"
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">💬</div>
-                    <div className="text-sm font-semibold text-foreground mb-1">Ask Anything</div>
-                    <div className="text-xs text-muted leading-relaxed">
-                      Learn about investing, get explanations of financial concepts, or ask general finance questions
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400/70">Learn</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400/70">Explain</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400/70">Advise</span>
-                    </div>
-                  </button>
-                </div>
+                    {/* General card */}
+                    <button
+                      onClick={() => handleFeatureCardClick("general")}
+                      className={`text-left p-4 rounded-xl border-2 transition-all hover:scale-[1.02] ${
+                        mode === "general"
+                          ? "border-blue-500/40 bg-blue-500/5"
+                          : "border-border bg-background hover:border-blue-500/30"
+                      }`}
+                    >
+                      <div className="text-2xl mb-2">{"\uD83D\uDCAC"}</div>
+                      <div className="text-sm font-semibold text-foreground mb-1">Ask Anything</div>
+                      <div className="text-xs text-muted leading-relaxed">
+                        Learn about investing, get explanations of financial concepts, or ask general finance questions
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400/70">Learn</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400/70">Explain</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400/70">Advise</span>
+                      </div>
+                    </button>
+                  </div>
+                )}
 
                 {/* Suggestion chips */}
                 <div className="max-w-2xl w-full">
                   <div className="text-xs text-muted/60 mb-2 text-center">
-                    Try one of these to get started:
+                    {tier === "newbie" ? "Just ask me anything, for example:" : "Try one of these to get started:"}
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {currentMode.suggestions.map((s) => (
+                    {(tier === "newbie" ? NEWBIE_SUGGESTIONS : currentMode.suggestions).map((s) => (
                       <button
                         key={s}
                         onClick={() => handleSuggestionClick(s)}
@@ -754,23 +771,25 @@ export default function GoldDiggerPage() {
 
           {/* Input area with mode selector */}
           <div className="p-3 border-t border-border">
-            {/* Mode pills */}
-            <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
-              {(Object.keys(MODE_CONFIG) as AgentMode[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${
-                    mode === m
-                      ? MODE_CONFIG[m].activeColor
-                      : "border-transparent text-muted/60 hover:text-muted hover:bg-background"
-                  }`}
-                >
-                  <span>{MODE_CONFIG[m].icon}</span>
-                  <span>{MODE_CONFIG[m].label}</span>
-                </button>
-              ))}
-            </div>
+            {/* Mode pills — hidden for Newbie tier (auto-mode only) */}
+            {tier !== "newbie" && (
+              <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
+                {(Object.keys(MODE_CONFIG) as AgentMode[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${
+                      mode === m
+                        ? MODE_CONFIG[m].activeColor
+                        : "border-transparent text-muted/60 hover:text-muted hover:bg-background"
+                    }`}
+                  >
+                    <span>{MODE_CONFIG[m].icon}</span>
+                    <span>{MODE_CONFIG[m].label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Input row */}
             <div className="flex gap-2 items-end">
@@ -779,7 +798,7 @@ export default function GoldDiggerPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={currentMode.placeholder}
+                placeholder={tier === "newbie" ? "Ask me anything about investing, or just say hi..." : currentMode.placeholder}
                 rows={1}
                 className="flex-1 bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent resize-none"
                 style={{ minHeight: "40px", maxHeight: "120px" }}

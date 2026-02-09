@@ -43,6 +43,8 @@ export interface GoldDiggerConfig {
     enablePersonality: boolean;
   };
   userProfile?: UserProfile;
+  /** User interface tier — controls which features/tabs are visible */
+  userTier?: "newbie" | "intermediate" | "expert";
   createdAt: string;
   updatedAt: string;
 }
@@ -59,6 +61,8 @@ export interface GoldDiggerConfigPublic {
   preferredModel: string;
   preferences: GoldDiggerConfig["preferences"];
   userProfile?: UserProfile;
+  /** User interface tier — controls which features/tabs are visible */
+  userTier?: "newbie" | "intermediate" | "expert";
   createdAt: string;
   updatedAt: string;
   /** True when config is driven by env vars and filesystem is not writable. */
@@ -293,6 +297,7 @@ export function getPublicConfig(): GoldDiggerConfigPublic {
     preferredModel,
     preferences: config.preferences,
     userProfile: config.userProfile,
+    userTier: config.userTier,
     createdAt: config.createdAt,
     updatedAt: config.updatedAt,
     envOnly: !isFilesystemWritable(),

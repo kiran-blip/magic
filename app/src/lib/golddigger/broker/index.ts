@@ -1,5 +1,5 @@
 /**
- * Broker module — Alpaca integration for Gold Digger AGI.
+ * Broker module — Alpaca integration and Simulator for Gold Digger AGI.
  */
 
 export {
@@ -20,6 +20,13 @@ export {
   type OrderParams,
   type BrokerOrder,
 } from "./alpaca";
+
+export {
+  SimulatorBroker,
+  getSimulator,
+  initSimulator,
+  disconnectSimulator,
+} from "./simulator";
 
 export {
   getBrokerConfig,

@@ -17,6 +17,7 @@ import {
   recallInvestmentHistory,
   generateTags,
 } from "@/lib/golddigger/memory";
+import { chatLimiter, rateLimit } from "@/lib/golddigger/rate-limiter";
 
 function authenticate(req: NextRequest) {
   const token = req.cookies.get("magic-token")?.value;
@@ -25,6 +26,15 @@ function authenticate(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit check — 10 requests/minute for AI calls
+  const rl = rateLimit(req, chatLimiter);
+  if (!rl.allowed) {
+    return new Response(
+      JSON.stringify({ error: "Too many requests. Please wait before sending another message.", retryAfter: rl.retryAfter }),
+      { status: 429, headers: { "Content-Type": "application/json", "Retry-After": String(rl.retryAfter ?? 10) } }
+    );
+  }
+
   const user = authenticate(req);
   if (!user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {

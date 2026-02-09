@@ -48,6 +48,15 @@ async function getMarketDataForVerification() {
   return result;
 }
 
+/**
+ * Clear the verification market data cache.
+ * Exposed for testing — allows each test to start with a fresh cache.
+ */
+export function clearVerificationCache(): void {
+  verificationMarketCache = null;
+  verificationCacheTime = 0;
+}
+
 // ── Verification by Risk Manager ────────────────────────────────────────────
 
 /**

@@ -18,13 +18,16 @@ import {
 // Types
 // ============================================================================
 
+export type BrokerProvider = "alpaca" | "simulator";
+
 export interface BrokerConfig {
-  provider: "alpaca";
+  provider: BrokerProvider;
   encryptedApiKey: string;
   encryptedApiSecret: string;
   tradingMode: TradingMode;
   tradingEnabled: boolean;
   paperTradingStartDate: string; // ISO date
+  simulatorStartingCapital?: number; // Default: 100000
   liveReadinessThreshold: {
     minPredictions: number; // min tracked predictions before live is available
     minWinRate: number; // min win rate % to suggest going live
