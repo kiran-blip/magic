@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+
+/* ── Types ──────────────────────────────────────────────── */
 
 interface UserProfile {
   riskTolerance: "conservative" | "moderate" | "aggressive";
@@ -30,12 +32,219 @@ interface PublicConfig {
   envOnly: boolean;
 }
 
+interface BrokerAccount {
+  id?: string;
+  accountNumber?: string;
+  status?: string;
+  portfolioValue: number;
+  buyingPower: number;
+  cash: number;
+  equity: number;
+}
+
+interface BrokerStatus {
+  connected: boolean;
+  tradingMode?: "paper" | "live";
+  tradingEnabled?: boolean;
+  hasCredentials?: boolean;
+  account?: BrokerAccount;
+  market?: { isOpen: boolean; nextOpen?: string; nextClose?: string };
+  riskLimits?: {
+    maxPositionPercent: number;
+    maxDailyLossPercent: number;
+    maxDailyTrades: number;
+    requireApprovalAbove: number;
+    allowShortSelling: boolean;
+    allowMarginTrading: boolean;
+  };
+  error?: string;
+}
+
+/* ── Constants ──────────────────────────────────────────── */
+
+type BrokerProvider =
+  | "alpaca" | "ibkr" | "questrade" | "tradier" | "etoro"
+  | "trading212" | "saxo" | "oanda" | "pepperstone" | "ig" | "simulator";
+
+interface BrokerOption {
+  id: BrokerProvider;
+  name: string;
+  desc: string;
+  regions: string;
+  status: "available" | "coming_soon";
+  signupUrl?: string;
+  note?: string;
+  steps: Array<{ step: number; title: string; desc: string }>;
+}
+
+const BROKER_OPTIONS: BrokerOption[] = [
+  // ── Available now ──────────────────────────────────────
+  {
+    id: "alpaca",
+    name: "Alpaca",
+    desc: "Commission-free API-first broker with instant paper trading",
+    regions: "US, AU, DE, HK, IN, JP, MY, SG, ZA, AE, UK + paper globally",
+    status: "available",
+    signupUrl: "https://app.alpaca.markets/signup",
+    note: "Live trading in select countries. Paper trading API available globally — best for getting started.",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up free at Alpaca — no deposit needed for paper trading" },
+      { step: 2, title: "Get API keys", desc: "Go to Paper Trading dashboard → API Keys → Generate New Key" },
+      { step: 3, title: "Paste below", desc: "Enter your API key & secret — they're encrypted before storage" },
+    ],
+  },
+  // ── Coming soon — Global ───────────────────────────────
+  {
+    id: "ibkr",
+    name: "Interactive Brokers",
+    desc: "Institutional-grade broker — 170 markets across 40 countries",
+    regions: "Global — US, Canada, EU, UK, Asia, AU, 200+ countries",
+    status: "coming_soon",
+    signupUrl: "https://www.interactivebrokers.com/en/trading/free-trial.php",
+    note: "Best for Canada. IBKR Canada (CIRO member). API works for US stocks. Canadian equities have API restrictions (IIROC DMR 3200).",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up for an IBKR paper trading account (free)" },
+      { step: 2, title: "Enable API", desc: "In TWS/IB Gateway → Edit → Global Config → API → Settings" },
+      { step: 3, title: "Connect", desc: "Gold Digger connects via TWS API on localhost" },
+    ],
+  },
+  {
+    id: "oanda",
+    name: "OANDA",
+    desc: "Forex & CFD broker with REST API — divisions in 6+ regions",
+    regions: "US, Canada, EU, UK, AU, Japan, Singapore, Africa, Middle East, Latin America, SE Asia",
+    status: "coming_soon",
+    signupUrl: "https://www.oanda.com/apply/",
+    note: "One of the widest global footprints. Covers Africa (Kenya, Egypt, South Africa+), Middle East (UAE), and Latin America. REST v20 API with streaming.",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up via your regional OANDA division (demo account free)" },
+      { step: 2, title: "Get API token", desc: "Go to Manage API Access in your account settings" },
+      { step: 3, title: "Connect", desc: "Enter your API token and account ID below" },
+    ],
+  },
+  {
+    id: "etoro",
+    name: "eToro",
+    desc: "Social trading platform with public API — stocks, crypto, ETFs",
+    regions: "76+ countries — US, UK, EU, UAE, Latin America, SE Asia, AU",
+    status: "coming_soon",
+    signupUrl: "https://www.etoro.com/",
+    note: "Public APIs launched 2025. Supports algo trading, social analytics, CopyTrader. Not available in Canada, China, India, Japan, Russia.",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up at eToro (76+ countries supported)" },
+      { step: 2, title: "Get API access", desc: "Apply for Public API access via developer portal" },
+      { step: 3, title: "Connect", desc: "Enter your API credentials to connect" },
+    ],
+  },
+  {
+    id: "saxo",
+    name: "Saxo Bank",
+    desc: "Premium multi-asset broker with OpenAPI — 40,000+ instruments",
+    regions: "EU, UK, Switzerland, Middle East (UAE, Saudi, Qatar, Israel), Asia (HK, JP, SG, MY, TH)",
+    status: "coming_soon",
+    signupUrl: "https://www.home.saxo/",
+    note: "OpenAPI with streaming quotes, order placement, and portfolio management. 40,000+ tradeable instruments across all asset classes.",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up at Saxo Bank (demo account available)" },
+      { step: 2, title: "Register app", desc: "Register your application on the Saxo Developer Portal" },
+      { step: 3, title: "Authorize", desc: "Complete OAuth flow to connect Gold Digger" },
+    ],
+  },
+  {
+    id: "ig",
+    name: "IG Group",
+    desc: "World's largest CFD & spread betting broker with REST/streaming API",
+    regions: "UK, EU, AU, Singapore, Japan, South Africa, UAE, US (limited)",
+    status: "coming_soon",
+    signupUrl: "https://www.ig.com/",
+    note: "Highest trust score globally. 17,000+ markets. REST API with streaming. Demo account available for testing.",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up at IG (demo account free in most regions)" },
+      { step: 2, title: "Get API key", desc: "Generate an API key from your account settings" },
+      { step: 3, title: "Connect", desc: "Enter your API key and account credentials" },
+    ],
+  },
+  {
+    id: "pepperstone",
+    name: "Pepperstone",
+    desc: "Low-latency forex/CFD broker — FIX & cTrader Open API",
+    regions: "AU, UK, EU, Middle East, Kenya, South Africa",
+    status: "coming_soon",
+    signupUrl: "https://pepperstone.com/",
+    note: "ASIC regulated. ~30ms execution latency. Razor account with raw spreads from 0.0 pips. FIX protocol for institutional-grade automation.",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up at Pepperstone (demo account free)" },
+      { step: 2, title: "Choose platform", desc: "Select cTrader (Open API) or MT4/MT5 (Expert Advisors)" },
+      { step: 3, title: "Connect", desc: "Configure API access via cTrader or FIX protocol" },
+    ],
+  },
+  // ── Coming soon — Regional ─────────────────────────────
+  {
+    id: "tradier",
+    name: "Tradier",
+    desc: "Developer-focused US equities & options broker with OAuth API",
+    regions: "US-based, accounts from 120+ countries (not Canada/UK/AU)",
+    status: "coming_soon",
+    signupUrl: "https://brokerage.tradier.com/signup",
+    note: "REST API with OAuth 2.0. No minimum deposit. Commission-free equity trades. EU residents cannot trade US ETFs.",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up at Tradier (sandbox account free for testing)" },
+      { step: 2, title: "Get API token", desc: "Generate an access token from the developer portal" },
+      { step: 3, title: "Connect", desc: "Enter your OAuth token to connect" },
+    ],
+  },
+  {
+    id: "questrade",
+    name: "Questrade",
+    desc: "Canadian broker with free API — account data and market data",
+    regions: "Canada",
+    status: "coming_soon",
+    signupUrl: "https://www.questrade.com/self-directed-investing",
+    note: "API trade execution limited to partner developers. Account data and market data APIs are open to all users.",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up for a Questrade account (Canadian residents)" },
+      { step: 2, title: "Register API app", desc: "Visit questrade.com/api and register your application" },
+      { step: 3, title: "Authorize", desc: "Generate an OAuth token to connect Gold Digger" },
+    ],
+  },
+  {
+    id: "trading212",
+    name: "Trading 212",
+    desc: "Commission-free investing platform with public API (beta)",
+    regions: "63 countries — EU, UK, AU",
+    status: "coming_soon",
+    signupUrl: "https://www.trading212.com/",
+    note: "Public API in beta. Supports Invest and Stocks ISA accounts. Market orders only via API during beta. Commission-free stock and ETF trading.",
+    steps: [
+      { step: 1, title: "Create account", desc: "Sign up at Trading 212 (available in 63 countries)" },
+      { step: 2, title: "Generate API key", desc: "Go to Settings → API → Generate key pair" },
+      { step: 3, title: "Connect", desc: "Enter your API key and secret to connect" },
+    ],
+  },
+  // ── Built-in — Everywhere ──────────────────────────────
+  {
+    id: "simulator",
+    name: "Built-in Simulator",
+    desc: "No account needed — simulated trading with real market data",
+    regions: "Available everywhere",
+    status: "coming_soon",
+    note: "Perfect for learning, testing, or regions without broker API access. Uses real-time market data with simulated order execution.",
+    steps: [
+      { step: 1, title: "Set capital", desc: "Choose your starting virtual balance (default: $100,000)" },
+      { step: 2, title: "Start trading", desc: "Fleet uses real market data with simulated order execution" },
+      { step: 3, title: "Track results", desc: "Performance tracked internally — migrate to live broker anytime" },
+    ],
+  },
+];
+
+/* ── Component ──────────────────────────────────────────── */
+
 export default function GoldDiggerSettings() {
   const router = useRouter();
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Editable fields
+  // LLM keys
   const [anthropicKey, setAnthropicKey] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [routingMode, setRoutingMode] = useState("auto");
@@ -49,11 +258,24 @@ export default function GoldDiggerSettings() {
   const [focusAreas, setFocusAreas] = useState<UserProfile["focusAreas"]>(["stocks"]);
   const [experienceLevel, setExperienceLevel] = useState<UserProfile["experienceLevel"]>("beginner");
 
+  // Broker state
+  const [brokerProvider, setBrokerProvider] = useState<BrokerProvider>("alpaca");
+  const [brokerStatus, setBrokerStatus] = useState<BrokerStatus | null>(null);
+  const [alpacaKey, setAlpacaKey] = useState("");
+  const [alpacaSecret, setAlpacaSecret] = useState("");
+  const [brokerConnecting, setBrokerConnecting] = useState(false);
+  const [brokerDisconnecting, setBrokerDisconnecting] = useState(false);
+  const [brokerError, setBrokerError] = useState("");
+  const [brokerSuccess, setBrokerSuccess] = useState("");
+
+  // General save state
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
+
   function toggleFocusArea(area: UserProfile["focusAreas"][number]) {
-    if (area === "all") {
-      setFocusAreas(["all"]);
-      return;
-    }
+    if (area === "all") { setFocusAreas(["all"]); return; }
     setFocusAreas((prev) => {
       const without = prev.filter((a) => a !== "all");
       if (without.includes(area)) {
@@ -64,12 +286,17 @@ export default function GoldDiggerSettings() {
     });
   }
 
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
-  const [warning, setWarning] = useState("");
+  /* ── Load config + broker status ─────────────────────── */
 
-  /* ── Load current config ─────────────────────── */
+  const loadBroker = useCallback(async () => {
+    try {
+      const res = await fetch("/api/golddigger/broker");
+      if (res.ok) {
+        const data = await res.json();
+        setBrokerStatus(data);
+      }
+    } catch { /* non-critical */ }
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -82,7 +309,6 @@ export default function GoldDiggerSettings() {
           setEnableDisclaimers(data.preferences?.enableDisclaimers ?? true);
           setEnableSafety(data.preferences?.enableSafetyGovernor ?? true);
           setEnablePersonality(data.preferences?.enablePersonality ?? true);
-          // Load investor profile
           if (data.userProfile) {
             setRiskTolerance(data.userProfile.riskTolerance ?? "moderate");
             setCapitalRange(data.userProfile.capitalRange ?? "5k_50k");
@@ -90,36 +316,80 @@ export default function GoldDiggerSettings() {
             setExperienceLevel(data.userProfile.experienceLevel ?? "beginner");
           }
         }
-      } catch {
-        setError("Failed to load settings");
-      }
+      } catch { setError("Failed to load settings"); }
       setLoading(false);
     }
     load();
-  }, []);
+    loadBroker();
+  }, [loadBroker]);
 
-  /* ── Client-side key validation ─────────────── */
+  /* ── Key validation ──────────────────────────────────── */
 
   function validateKeyLocally(provider: "anthropic" | "openrouter", key: string): string | null {
     const trimmed = key.trim();
-    if (!trimmed) return null; // Empty is fine
-
-    if (trimmed.length < 20) {
-      return `Key is too short — did you paste the full ${provider === "anthropic" ? "Anthropic" : "OpenRouter"} key?`;
-    }
-    if (provider === "anthropic" && !trimmed.startsWith("sk-ant-")) {
-      return "Anthropic keys start with 'sk-ant-'. Check you pasted the right key.";
-    }
-    if (provider === "openrouter" && !trimmed.startsWith("sk-or-")) {
-      return "OpenRouter keys start with 'sk-or-'. Check you pasted the right key.";
-    }
-    if (/\s{2,}/.test(trimmed) || trimmed.split(" ").length > 3) {
-      return "This doesn't look like an API key — API keys don't contain spaces.";
-    }
+    if (!trimmed) return null;
+    if (trimmed.length < 20) return `Key is too short — did you paste the full ${provider === "anthropic" ? "Anthropic" : "OpenRouter"} key?`;
+    if (provider === "anthropic" && !trimmed.startsWith("sk-ant-")) return "Anthropic keys start with 'sk-ant-'. Check you pasted the right key.";
+    if (provider === "openrouter" && !trimmed.startsWith("sk-or-")) return "OpenRouter keys start with 'sk-or-'. Check you pasted the right key.";
+    if (/\s{2,}/.test(trimmed) || trimmed.split(" ").length > 3) return "This doesn't look like an API key — API keys don't contain spaces.";
     return null;
   }
 
-  /* ── Save settings ───────────────────────────── */
+  /* ── Broker connect / disconnect ─────────────────────── */
+
+  async function connectBroker() {
+    if (!alpacaKey.trim() || !alpacaSecret.trim()) {
+      setBrokerError("Both API key and secret are required");
+      return;
+    }
+    setBrokerConnecting(true);
+    setBrokerError("");
+    setBrokerSuccess("");
+
+    try {
+      const res = await fetch("/api/golddigger/broker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: alpacaKey.trim(),
+          apiSecret: alpacaSecret.trim(),
+          tradingMode: "paper",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBrokerError(data.error || "Connection failed");
+      } else {
+        setBrokerSuccess(`Connected to Alpaca paper trading`);
+        setAlpacaKey("");
+        setAlpacaSecret("");
+        await loadBroker();
+        setTimeout(() => setBrokerSuccess(""), 5000);
+      }
+    } catch {
+      setBrokerError("Failed to connect — check your network");
+    }
+    setBrokerConnecting(false);
+  }
+
+  async function disconnectBrokerAction() {
+    setBrokerDisconnecting(true);
+    setBrokerError("");
+    setBrokerSuccess("");
+    try {
+      const res = await fetch("/api/golddigger/broker", { method: "DELETE" });
+      if (res.ok) {
+        setBrokerSuccess("Broker disconnected");
+        await loadBroker();
+        setTimeout(() => setBrokerSuccess(""), 3000);
+      }
+    } catch {
+      setBrokerError("Failed to disconnect");
+    }
+    setBrokerDisconnecting(false);
+  }
+
+  /* ── Save general settings ───────────────────────────── */
 
   async function saveSettings() {
     setSaving(true);
@@ -127,7 +397,6 @@ export default function GoldDiggerSettings() {
     setSaved(false);
     setWarning("");
 
-    // Client-side validation first
     if (anthropicKey.trim()) {
       const err = validateKeyLocally("anthropic", anthropicKey);
       if (err) { setError(err); setSaving(false); return; }
@@ -146,15 +415,8 @@ export default function GoldDiggerSettings() {
           enableSafetyGovernor: enableSafety,
           enablePersonality,
         },
-        userProfile: {
-          riskTolerance,
-          capitalRange,
-          focusAreas,
-          experienceLevel,
-        },
+        userProfile: { riskTolerance, capitalRange, focusAreas, experienceLevel },
       };
-
-      // Only send keys if user entered new ones
       if (anthropicKey.trim()) body.anthropicApiKey = anthropicKey.trim();
       if (openrouterKey.trim()) body.openrouterApiKey = openrouterKey.trim();
 
@@ -163,7 +425,6 @@ export default function GoldDiggerSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to save");
@@ -172,27 +433,20 @@ export default function GoldDiggerSettings() {
         setConfig(data.config);
         setAnthropicKey("");
         setOpenrouterKey("");
-
-        // Show key test results
-        if (data.keyTestResults?.length) {
-          const allPassed = data.keyTestResults.every((r: { success: boolean }) => r.success);
-          if (allPassed) {
-            setWarning(""); // Clear any previous warnings
-          }
-        }
-        if (data.warning) {
-          setWarning(data.warning);
-          setTimeout(() => setWarning(""), 8000);
-        }
+        if (data.warning) { setWarning(data.warning); setTimeout(() => setWarning(""), 8000); }
         setTimeout(() => setSaved(false), 5000);
       }
-    } catch {
-      setError("Failed to save settings");
-    }
+    } catch { setError("Failed to save settings"); }
     setSaving(false);
   }
 
-  /* ── Render ──────────────────────────────────── */
+  /* ── Helpers ─────────────────────────────────────────── */
+
+  function fmt$(v: number) {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(v);
+  }
+
+  /* ── Render ──────────────────────────────────────────── */
 
   if (loading) {
     return (
@@ -204,11 +458,12 @@ export default function GoldDiggerSettings() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Header */}
+
+      {/* ── Header ─────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">Gold Digger Settings</h1>
-          <p className="text-sm text-muted mt-1">Manage API keys, routing, and preferences</p>
+          <p className="text-sm text-muted mt-1">Configure your AI fleet, broker, and preferences</p>
         </div>
         <Link
           href="/dashboard/gold-digger"
@@ -218,25 +473,277 @@ export default function GoldDiggerSettings() {
         </Link>
       </div>
 
-      {/* Railway env-only notice */}
+      {/* ── Railway env-only notice ────────────────────── */}
       {config?.envOnly && (
         <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 text-sm">
           <div className="font-medium text-warning mb-1">Environment Variable Mode</div>
           <div className="text-muted text-xs">
             Config changes {"won't"} persist across deploys. To make settings permanent, set environment variables in your Railway dashboard
-            (ANTHROPIC_API_KEY, OPENROUTER_API_KEY, etc.) or attach a Railway Volume at /app/data.
+            or attach a Railway Volume at /app/data.
           </div>
         </div>
       )}
 
-      {/* Status card */}
+      {/* ══════════════════════════════════════════════════ */}
+      {/* ── BROKER CONNECTION ─────────────────────────── */}
+      {/* ══════════════════════════════════════════════════ */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+
+        {/* Section header */}
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-foreground">Trading Broker</div>
+            <p className="text-xs text-muted mt-0.5">
+              Connect a brokerage account to enable autonomous paper trading
+            </p>
+          </div>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+            brokerStatus?.connected
+              ? "bg-success/10 text-success border-success/20"
+              : "bg-muted/10 text-muted border-border"
+          }`}>
+            {brokerStatus?.connected ? `${brokerStatus.tradingMode} connected` : "not connected"}
+          </span>
+        </div>
+
+        {/* Connected state — account info */}
+        {brokerStatus?.connected && brokerStatus.account && (
+          <div className="px-5 py-4 border-b border-border">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-[10px] text-muted uppercase tracking-wider">Portfolio</p>
+                <p className="text-sm font-semibold text-foreground">{fmt$(brokerStatus.account.portfolioValue)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted uppercase tracking-wider">Buying Power</p>
+                <p className="text-sm font-semibold text-foreground">{fmt$(brokerStatus.account.buyingPower)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted uppercase tracking-wider">Cash</p>
+                <p className="text-sm font-semibold text-success">{fmt$(brokerStatus.account.cash)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted uppercase tracking-wider">Market</p>
+                <p className={`text-sm font-semibold ${brokerStatus.market?.isOpen ? "text-success" : "text-muted"}`}>
+                  {brokerStatus.market?.isOpen ? "Open" : "Closed"}
+                </p>
+              </div>
+            </div>
+
+            {/* Risk limits summary */}
+            {brokerStatus.riskLimits && (
+              <div className="mt-4 pt-3 border-t border-border">
+                <p className="text-[10px] text-muted uppercase tracking-wider mb-2">Risk Limits</p>
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-[10px] px-2 py-1 rounded bg-background border border-border text-muted">
+                    Max position: {brokerStatus.riskLimits.maxPositionPercent}%
+                  </span>
+                  <span className="text-[10px] px-2 py-1 rounded bg-background border border-border text-muted">
+                    Daily loss cap: {brokerStatus.riskLimits.maxDailyLossPercent}%
+                  </span>
+                  <span className="text-[10px] px-2 py-1 rounded bg-background border border-border text-muted">
+                    Max trades/day: {brokerStatus.riskLimits.maxDailyTrades}
+                  </span>
+                  <span className="text-[10px] px-2 py-1 rounded bg-background border border-border text-muted">
+                    Approval: All orders
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Disconnect */}
+            <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
+              <div className="text-xs text-muted">
+                Mode: <span className="text-foreground font-medium capitalize">{brokerStatus.tradingMode}</span>
+                {brokerStatus.account.accountNumber && (
+                  <span className="ml-2 text-muted/60">Account: ...{brokerStatus.account.accountNumber.slice(-4)}</span>
+                )}
+              </div>
+              <button
+                onClick={disconnectBrokerAction}
+                disabled={brokerDisconnecting}
+                className="px-3 py-1.5 text-xs text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/10 transition-colors disabled:opacity-50"
+              >
+                {brokerDisconnecting ? "Disconnecting..." : "Disconnect"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Not connected — provider selector + connect form */}
+        {(!brokerStatus || !brokerStatus.connected) && (
+          <div className="px-5 py-4 space-y-5">
+
+            {/* Provider selector */}
+            <div>
+              <p className="text-xs font-medium text-foreground mb-3">
+                Choose your broker — each user needs their own trading account
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {BROKER_OPTIONS.map(b => (
+                  <button
+                    key={b.id}
+                    onClick={() => b.status === "available" && setBrokerProvider(b.id)}
+                    className={`text-left p-3 rounded-lg border transition-colors relative ${
+                      brokerProvider === b.id && b.status === "available"
+                        ? "border-accent bg-accent/5"
+                        : b.status === "coming_soon"
+                          ? "border-border bg-background/50 opacity-60 cursor-not-allowed"
+                          : "border-border bg-background hover:border-accent/40 cursor-pointer"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-foreground">{b.name}</span>
+                      {b.status === "coming_soon" && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
+                          soon
+                        </span>
+                      )}
+                      {brokerProvider === b.id && b.status === "available" && (
+                        <div className="w-2 h-2 rounded-full bg-accent" />
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted leading-relaxed">{b.desc}</p>
+                    <p className="text-[10px] text-muted/60 mt-1">{b.regions}</p>
+                    {b.note && (
+                      <p className="text-[10px] text-amber-400/70 mt-1.5 leading-relaxed">{b.note}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Setup guide for selected provider */}
+            {(() => {
+              const selected = BROKER_OPTIONS.find(b => b.id === brokerProvider);
+              if (!selected || selected.status === "coming_soon") return null;
+              return (
+                <div className="bg-background border border-border rounded-lg p-4">
+                  <p className="text-xs font-medium text-foreground mb-3">
+                    Set up {selected.name} paper trading:
+                  </p>
+                  <div className="space-y-3">
+                    {selected.steps.map(s => (
+                      <div key={s.step} className="flex items-start gap-3">
+                        <div className="w-5 h-5 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 mt-0.5">
+                          {s.step}
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-foreground">{s.title}</p>
+                          <p className="text-[11px] text-muted">{s.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {selected.signupUrl && (
+                    <a
+                      href={selected.signupUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent-hover transition-colors"
+                    >
+                      Open {selected.name} signup
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                    </a>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Alpaca connection form */}
+            {brokerProvider === "alpaca" && (
+              <>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted mb-1 block">Alpaca API Key</label>
+                    <input
+                      type="password"
+                      value={alpacaKey}
+                      onChange={e => { setAlpacaKey(e.target.value); setBrokerError(""); }}
+                      placeholder="PK... (from your Alpaca paper trading dashboard)"
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted/40 focus:outline-none focus:border-accent transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted mb-1 block">Alpaca Secret Key</label>
+                    <input
+                      type="password"
+                      value={alpacaSecret}
+                      onChange={e => { setAlpacaSecret(e.target.value); setBrokerError(""); }}
+                      placeholder="Your Alpaca secret key"
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted/40 focus:outline-none focus:border-accent transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px] text-muted">
+                  <div className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
+                  Paper trading mode — uses simulated funds, no real money at risk
+                </div>
+              </>
+            )}
+
+            {/* Error / success */}
+            {brokerError && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2.5 text-xs text-red-400">
+                {brokerError}
+              </div>
+            )}
+            {brokerSuccess && (
+              <div className="bg-success/10 border border-success/20 rounded-lg px-4 py-2.5 text-xs text-success">
+                {brokerSuccess}
+              </div>
+            )}
+
+            {/* Connect button */}
+            {brokerProvider === "alpaca" && (
+              <button
+                onClick={connectBroker}
+                disabled={brokerConnecting || !alpacaKey.trim() || !alpacaSecret.trim()}
+                className="w-full px-4 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {brokerConnecting ? "Testing connection..." : "Connect to Alpaca Paper Trading"}
+              </button>
+            )}
+
+            {/* Coming soon notice for other providers */}
+            {brokerProvider !== "alpaca" && (
+              <div className="bg-accent/5 border border-accent/20 rounded-lg px-4 py-3 text-center">
+                <p className="text-xs text-accent font-medium">
+                  {BROKER_OPTIONS.find(b => b.id === brokerProvider)?.name} integration coming soon
+                </p>
+                <p className="text-[11px] text-muted mt-1">
+                  Use Alpaca for now, or switch when this provider is available
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Error from auto-reconnect */}
+        {brokerStatus?.error && !brokerStatus.connected && (
+          <div className="px-5 pb-4">
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2.5 text-xs text-red-400">
+              Last connection error: {brokerStatus.error}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ══════════════════════════════════════════════════ */}
+      {/* ── LLM CONNECTION STATUS ────────────────────── */}
+      {/* ══════════════════════════════════════════════════ */}
       <div className="bg-card border border-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-sm font-medium text-foreground">Connection Status</div>
-          <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+          <div className="text-sm font-medium text-foreground">AI Connection Status</div>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
             config?.hasAnthropicKey || config?.hasOpenrouterKey
-              ? "bg-success/10 text-success border border-success/20"
-              : "bg-warning/10 text-warning border border-warning/20"
+              ? "bg-success/10 text-success border-success/20"
+              : "bg-warning/10 text-warning border-warning/20"
           }`}>
             {config?.hasAnthropicKey || config?.hasOpenrouterKey ? "configured" : "no keys"}
           </span>
@@ -267,10 +774,10 @@ export default function GoldDiggerSettings() {
         </div>
       </div>
 
-      {/* API Keys */}
+      {/* ── API Keys ──────────────────────────────────── */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-        <div className="text-sm font-medium text-foreground">Update API Keys</div>
-        <p className="text-xs text-muted">Leave blank to keep existing key. Enter a new key to replace it. Keys are validated live before saving.</p>
+        <div className="text-sm font-medium text-foreground">Update LLM API Keys</div>
+        <p className="text-xs text-muted">These power the fleet&apos;s AI brain. Leave blank to keep existing key.</p>
 
         <div className="space-y-3">
           <div>
@@ -312,7 +819,7 @@ export default function GoldDiggerSettings() {
         </div>
       </div>
 
-      {/* Routing Mode */}
+      {/* ── Routing Mode ─────────────────────────────── */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
         <div className="text-sm font-medium text-foreground">Routing Mode</div>
         <div className="grid grid-cols-2 gap-3">
@@ -341,7 +848,7 @@ export default function GoldDiggerSettings() {
         </div>
       </div>
 
-      {/* Feature Toggles */}
+      {/* ── Feature Toggles ──────────────────────────── */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
         <div className="text-sm font-medium text-foreground">Features</div>
         {([
@@ -364,11 +871,11 @@ export default function GoldDiggerSettings() {
         ))}
       </div>
 
-      {/* Investor Profile */}
+      {/* ── Investor Profile ─────────────────────────── */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
         <div>
           <div className="text-sm font-medium text-foreground">Investor Profile</div>
-          <p className="text-xs text-muted mt-0.5">These shape how Gold Digger AGI tailors its analysis and recommendations for you</p>
+          <p className="text-xs text-muted mt-0.5">These shape how your fleet tailors analysis and recommendations</p>
         </div>
 
         {/* Risk Tolerance */}
@@ -376,9 +883,9 @@ export default function GoldDiggerSettings() {
           <div className="text-xs text-muted mb-2">Risk Tolerance</div>
           <div className="grid grid-cols-3 gap-2">
             {([
-              { value: "conservative" as const, label: "Conservative", icon: "🛡️" },
-              { value: "moderate" as const, label: "Moderate", icon: "⚖️" },
-              { value: "aggressive" as const, label: "Aggressive", icon: "🚀" },
+              { value: "conservative" as const, label: "Conservative" },
+              { value: "moderate" as const, label: "Moderate" },
+              { value: "aggressive" as const, label: "Aggressive" },
             ]).map((opt) => (
               <button
                 key={opt.value}
@@ -389,7 +896,7 @@ export default function GoldDiggerSettings() {
                     : "border-border bg-background text-muted hover:border-accent/40 hover:text-foreground"
                 }`}
               >
-                <span className="mr-1">{opt.icon}</span> {opt.label}
+                {opt.label}
               </button>
             ))}
           </div>
@@ -470,7 +977,7 @@ export default function GoldDiggerSettings() {
         </div>
       </div>
 
-      {/* Actions */}
+      {/* ── Actions ───────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <button
           onClick={() => router.push("/dashboard/gold-digger/setup")}
@@ -478,7 +985,6 @@ export default function GoldDiggerSettings() {
         >
           Re-run Setup Wizard
         </button>
-
         <div className="flex items-center gap-3">
           {saved && <span className="text-sm text-success">Settings saved &amp; keys verified</span>}
           {warning && <span className="text-sm text-warning">{warning}</span>}

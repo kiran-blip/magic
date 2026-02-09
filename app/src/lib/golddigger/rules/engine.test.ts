@@ -307,9 +307,11 @@ describe("Rules Engine - getRules", () => {
     expect(expired).toEqual([]);
   });
 
-  it("should return rules in reverse chronological order (newest first)", () => {
+  it("should return rules in reverse chronological order (newest first)", async () => {
     engine.createRule({ name: "First", type: "price_alert", config: makePriceAlertConfig() });
+    await new Promise((r) => setTimeout(r, 10));
     engine.createRule({ name: "Second", type: "dca", config: makeDcaConfig() });
+    await new Promise((r) => setTimeout(r, 10));
     engine.createRule({ name: "Third", type: "stop_loss", config: makeStopLossConfig() });
 
     const rules = engine.getRules();

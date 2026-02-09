@@ -437,8 +437,10 @@ describe("settings", () => {
       const pub = getPublicConfig();
 
       // First 7 chars + "..." + last 4 chars
-      expect(pub.anthropicKeyHint).toBe("sk-ant-...mnop");
-      expect(pub.openrouterKeyHint).toBe("sk-or-v...onml");
+      // "mock-ant-zyxwvutsrqponml" => "mock-an" + "..." + "onml"
+      expect(pub.anthropicKeyHint).toBe("mock-an...onml");
+      // "mock-or-v1-zyxwvutsrqponml" => "mock-or" + "..." + "onml"
+      expect(pub.openrouterKeyHint).toBe("mock-or...onml");
 
       // Full keys should NOT appear
       expect(pub).not.toHaveProperty("anthropicApiKey");
@@ -510,7 +512,9 @@ describe("settings", () => {
 
       expect(publicConfig.hasAnthropicKey).toBe(true);
       expect(publicConfig.hasOpenrouterKey).toBe(true);
+      // "sk-ant-both-keys-test-abc" => "sk-ant-" + "..." + "-abc"
       expect(publicConfig.anthropicKeyHint).toBe("sk-ant-...-abc");
+      // "mock-or-v1-both-keys-test-xyz" => "mock-or" + "..." + "-xyz"
       expect(publicConfig.openrouterKeyHint).toBe("mock-or...-xyz");
 
       cleanupDir(dir);

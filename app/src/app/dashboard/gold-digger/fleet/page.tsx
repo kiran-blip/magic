@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -87,6 +88,7 @@ const RISK_STYLE: Record<string, string> = {
 /* ── Component ─────────────────────────────────────────── */
 
 export default function FleetDashboard() {
+  const router = useRouter();
   const [fleet, setFleet] = useState<FleetData | null>(null);
   const [broker, setBroker] = useState<BrokerAccount | null>(null);
   const [loading, setLoading] = useState(true);
@@ -200,15 +202,18 @@ export default function FleetDashboard() {
       {broker && !broker.connected && (
         <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-sm text-muted">No broker connected</p>
+            <p className="text-sm text-muted">No broker connected — set up in Settings to start trading</p>
             {(broker as BrokerAccount & { error?: string }).error && (
               <p className="text-xs text-red-400 mt-1">
                 {(broker as BrokerAccount & { error?: string }).error}
               </p>
             )}
           </div>
-          <button className="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs font-medium transition-colors">
-            Connect
+          <button
+            onClick={() => router.push("/dashboard/gold-digger/settings")}
+            className="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs font-medium transition-colors"
+          >
+            Connect Broker
           </button>
         </div>
       )}
