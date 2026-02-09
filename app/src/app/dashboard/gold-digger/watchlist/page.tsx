@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTier } from "../components/TierProvider";
 
 interface QuoteData {
   symbol: string;
@@ -16,12 +17,18 @@ const SUGGESTION_SYMBOLS = ["AAPL", "TSLA", "BTC-USD", "ETH-USD", "NVDA", "SPY",
 
 export default function WatchlistPage() {
   const router = useRouter();
+  const { tier } = useTier();
   const [quotes, setQuotes] = useState<QuoteData[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [newSymbol, setNewSymbol] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Simplified display for newbies
+  const isNewbie = tier === "newbie";
+  const headerTitle = isNewbie ? "Stocks You're Watching" : "Watchlist";
+  const headerSubtitle = isNewbie ? "Track your favorite investments" : "Track your favorite stocks and crypto in real-time";
 
   // Load watchlist
   const loadWatchlist = useCallback(async () => {
@@ -157,10 +164,10 @@ export default function WatchlistPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">
-            Watchlist <span className="text-accent text-sm font-normal">AGI</span>
+            {headerTitle} <span className="text-accent text-sm font-normal">AGI</span>
           </h1>
           <p className="text-sm text-muted mt-0.5">
-            Track your favorite stocks and crypto in real-time
+            {headerSubtitle}
           </p>
         </div>
         <div className="flex gap-2">
@@ -342,30 +349,46 @@ export default function WatchlistPage() {
                   {/* Price */}
                   {quote.currentPrice !== null ? (
                     <div className="mb-2">
-                      <div className="text-2xl font-bold text-foreground">
-                        ${quote.currentPrice.toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </div>
-                      <div
-                        className={`text-sm font-medium ${
-                          quote.change24h !== null && quote.change24h > 0
-                            ? "text-green-400"
-                            : quote.change24h !== null && quote.change24h < 0
-                              ? "text-red-400"
-                              : "text-muted"
-                        }`}
-                      >
-                        {quote.change24h !== null ? (
-                          <>
-                            {quote.change24h > 0 ? "+" : ""}
-                            {quote.change24h.toFixed(2)}%
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </div>
+                      {isNewbie ? (
+                        // Simplified view for newbies
+                        <div className="space-y-1">
+                          <div className="text-sm text-muted">Price</div>
+                          <div className="text-lg font-bold text-foreground">
+                            ${quote.currentPrice.toLocaleString("en-US", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 0,
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        // Detailed view for intermediate and expert
+                        <>
+                          <div className="text-2xl font-bold text-foreground">
+                            ${quote.currentPrice.toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </div>
+                          <div
+                            className={`text-sm font-medium ${
+                              quote.change24h !== null && quote.change24h > 0
+                                ? "text-green-400"
+                                : quote.change24h !== null && quote.change24h < 0
+                                  ? "text-red-400"
+                                  : "text-muted"
+                            }`}
+                          >
+                            {quote.change24h !== null ? (
+                              <>
+                                {quote.change24h > 0 ? "+" : ""}
+                                {quote.change24h.toFixed(2)}%
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div className="mb-2">

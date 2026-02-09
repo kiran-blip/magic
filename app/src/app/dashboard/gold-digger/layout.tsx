@@ -2,10 +2,11 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { TierProvider, useTier } from "./components/TierProvider";
 import { TIER_INFO, type UserTier } from "@/lib/golddigger/tier";
+import type { Notification } from "@/lib/golddigger/notifications";
 
 // ── SVG icons by nav key ──────────────────────────────────────────────────
 
@@ -85,6 +86,10 @@ function GoldDiggerLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { tier, navItems, loading: tierLoading } = useTier();
   const [status, setStatus] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const check = () => {
@@ -97,6 +102,55 @@ function GoldDiggerLayoutInner({ children }: { children: React.ReactNode }) {
     const id = setInterval(check, 30000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    const loadNotifications = async () => {
+      try {
+        const res = await fetch("/api/golddigger/notifications?limit=10");
+        if (res.ok) {
+          const data = await res.json();
+          setNotifications(data.notifications ?? []);
+          setUnreadCount(data.unreadCount ?? 0);
+        }
+      } catch {
+        // Non-critical
+      }
+    };
+
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        notifPanelRef.current &&
+        !notifPanelRef.current.contains(event.target as Node)
+      ) {
+        setShowNotifications(false);
+      }
+    }
+
+    if (showNotifications) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showNotifications]);
+
+  const handleMarkAllRead = async () => {
+    try {
+      await fetch("/api/golddigger/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark-all-read" }),
+      });
+      setUnreadCount(0);
+      setNotifications(notifications.map((n) => ({ ...n, read: true })));
+    } catch {
+      // Non-critical
+    }
+  };
 
   function isActive(href: string) {
     if (href === "/dashboard/gold-digger") {
@@ -131,6 +185,120 @@ function GoldDiggerLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Notifications Bell */}
+          <div className="relative" ref={notifPanelRef}>
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="relative p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-card border border-transparent hover:border-border transition-colors"
+              title={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+            >
+              {/* Bell icon */}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              {/* Unread count badge */}
+              {unreadCount > 0 && (
+                <span className="absolute top-0 right-0 w-4 h-4 bg-accent text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Notifications dropdown panel */}
+            {showNotifications && (
+              <div className="absolute right-0 mt-2 w-80 bg-card border border-border rounded-xl shadow-lg shadow-black/20 z-50">
+                {/* Header */}
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                  <span className="text-sm font-medium text-foreground">Notifications</span>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="text-xs text-accent hover:text-accent-hover transition-colors"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+
+                {/* Notifications list */}
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <div className="text-2xl mb-2">🔔</div>
+                    <div className="text-sm text-muted">No notifications yet</div>
+                    <div className="text-xs text-muted/50 mt-1">
+                      You're all caught up
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-h-96 overflow-y-auto divide-y divide-border">
+                    {notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        className={`px-4 py-3 transition-colors ${
+                          notif.read ? "bg-background/50" : "bg-background hover:bg-background/70"
+                        }`}
+                      >
+                        {/* Priority indicator + type */}
+                        <div className="flex items-start gap-2 mb-1">
+                          <div
+                            className={`w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0 ${
+                              notif.priority === "high"
+                                ? "bg-red-400"
+                                : notif.priority === "medium"
+                                  ? "bg-amber-400"
+                                  : "bg-blue-400"
+                            }`}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-foreground truncate">
+                                {notif.title}
+                              </span>
+                              <span className="text-[10px] text-muted/60 flex-shrink-0 whitespace-nowrap">
+                                {notif.type.replace(/_/g, " ")}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted mt-0.5 line-clamp-2">
+                              {notif.message}
+                            </p>
+                            <div className="text-[10px] text-muted/50 mt-1">
+                              {new Date(notif.timestamp).toLocaleTimeString(undefined, {
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Footer */}
+                {notifications.length > 0 && (
+                  <div className="px-4 py-2 border-t border-border text-center">
+                    <button
+                      onClick={() => setShowNotifications(false)}
+                      className="text-xs text-muted hover:text-foreground transition-colors"
+                    >
+                      Close
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Tier badge */}
           {!tierLoading && (
             <Link

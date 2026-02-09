@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTier } from "../components/TierProvider";
 
 interface Prediction {
   id: string;
@@ -74,10 +75,16 @@ function formatPercent(value: number): string {
 }
 
 export default function PredictionsPage() {
+  const { tier } = useTier();
   const [stats, setStats] = useState<StatsData | null>(null);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Newbies shouldn't see this page, but add check anyway
+  const isNewbie = tier === "newbie";
+  const isIntermediate = tier === "intermediate";
+  const isExpert = tier === "expert";
 
   useEffect(() => {
     async function loadData() {
@@ -154,88 +161,115 @@ export default function PredictionsPage() {
       )}
 
       {/* Live Readiness Gate */}
-      <div className="bg-card border border-border rounded-xl p-6 space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Live Trading Readiness</h2>
-            <p className="text-xs text-muted mt-1">Progress toward paper trading graduation</p>
+      {!isNewbie && (
+        <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Live Trading Readiness</h2>
+              <p className="text-xs text-muted mt-1">Progress toward paper trading graduation</p>
+            </div>
+            <div
+              className={`px-4 py-1.5 rounded-full text-sm font-medium ${
+                stats?.liveReadiness?.ready
+                  ? "bg-success/10 text-success border border-success/20"
+                  : "bg-warning/10 text-warning border border-warning/20"
+              }`}
+            >
+              {stats?.liveReadiness?.ready ? "READY FOR LIVE" : "PAPER TRADING"}
+            </div>
           </div>
-          <div
-            className={`px-4 py-1.5 rounded-full text-sm font-medium ${
-              stats?.liveReadiness?.ready
-                ? "bg-success/10 text-success border border-success/20"
-                : "bg-warning/10 text-warning border border-warning/20"
-            }`}
-          >
-            {stats?.liveReadiness?.ready ? "READY FOR LIVE" : "PAPER TRADING"}
-          </div>
+
+          <p className="text-xs text-muted">
+            {stats?.liveReadiness?.ready
+              ? "You have met all requirements for live trading. Congratulations!"
+              : "Complete the requirements below to graduate from paper trading to live predictions."}
+          </p>
+
+          {isExpert && (
+            // Detailed 3-column view for experts
+            <div className="grid grid-cols-3 gap-4">
+              {/* Predictions Needed */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-foreground">Predictions</span>
+                  <span className="text-xs text-muted">
+                    {stats?.totalPredictions ?? 0} / 50
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-border rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, ((stats?.totalPredictions ?? 0) / 50) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-muted mt-1">50 predictions needed</div>
+              </div>
+
+              {/* Accuracy Needed */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-foreground">Accuracy</span>
+                  <span className="text-xs text-muted">
+                    {formatPercent(stats?.accuracy ?? 0)}% / 55%
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-border rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, ((stats?.accuracy ?? 0) / 0.55) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-muted mt-1">55% win rate needed</div>
+              </div>
+
+              {/* Days Needed */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-foreground">Time</span>
+                  <span className="text-xs text-muted">
+                    {stats?.liveReadiness?.daysTracking ?? 0} / 30 days
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-border rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, ((stats?.liveReadiness?.daysTracking ?? 0) / 30) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-muted mt-1">30 days tracking needed</div>
+              </div>
+            </div>
+          )}
+
+          {isIntermediate && (
+            // Simplified single-row view for intermediate
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted">Predictions tracked</span>
+                <span className="font-semibold text-foreground">{stats?.totalPredictions ?? 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted">Accuracy</span>
+                <span className={`font-semibold ${getAccuracyColor(stats?.accuracy ?? 0)}`}>
+                  {formatPercent(stats?.accuracy ?? 0)}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted">Days tracking</span>
+                <span className="font-semibold text-foreground">
+                  {stats?.liveReadiness?.daysTracking ?? 0} / 30
+                </span>
+              </div>
+            </div>
+          )}
         </div>
-
-        <p className="text-xs text-muted">
-          {stats?.liveReadiness?.ready
-            ? "You have met all requirements for live trading. Congratulations!"
-            : "Complete the requirements below to graduate from paper trading to live predictions."}
-        </p>
-
-        <div className="grid grid-cols-3 gap-4">
-          {/* Predictions Needed */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-foreground">Predictions</span>
-              <span className="text-xs text-muted">
-                {stats?.totalPredictions ?? 0} / 50
-              </span>
-            </div>
-            <div className="w-full h-2 bg-border rounded-full overflow-hidden">
-              <div
-                className="h-full bg-accent transition-all duration-300"
-                style={{
-                  width: `${Math.min(100, ((stats?.totalPredictions ?? 0) / 50) * 100)}%`,
-                }}
-              />
-            </div>
-            <div className="text-xs text-muted mt-1">50 predictions needed</div>
-          </div>
-
-          {/* Accuracy Needed */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-foreground">Accuracy</span>
-              <span className="text-xs text-muted">
-                {formatPercent(stats?.accuracy ?? 0)}% / 55%
-              </span>
-            </div>
-            <div className="w-full h-2 bg-border rounded-full overflow-hidden">
-              <div
-                className="h-full bg-accent transition-all duration-300"
-                style={{
-                  width: `${Math.min(100, ((stats?.accuracy ?? 0) / 0.55) * 100)}%`,
-                }}
-              />
-            </div>
-            <div className="text-xs text-muted mt-1">55% win rate needed</div>
-          </div>
-
-          {/* Days Needed */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-foreground">Time</span>
-              <span className="text-xs text-muted">
-                {stats?.liveReadiness?.daysTracking ?? 0} / 30 days
-              </span>
-            </div>
-            <div className="w-full h-2 bg-border rounded-full overflow-hidden">
-              <div
-                className="h-full bg-accent transition-all duration-300"
-                style={{
-                  width: `${Math.min(100, ((stats?.liveReadiness?.daysTracking ?? 0) / 30) * 100)}%`,
-                }}
-              />
-            </div>
-            <div className="text-xs text-muted mt-1">30 days tracking needed</div>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Stats Overview Cards */}
       <div className="grid grid-cols-4 gap-4">
@@ -297,8 +331,8 @@ export default function PredictionsPage() {
         </div>
       </div>
 
-      {/* Accuracy by Type */}
-      {stats?.byType && Object.keys(stats.byType).length > 0 && (
+      {/* Accuracy by Type — Expert only */}
+      {isExpert && stats?.byType && Object.keys(stats.byType).length > 0 && (
         <div className="bg-card border border-border rounded-xl p-6 space-y-4">
           <div className="text-lg font-semibold text-foreground">Accuracy by Prediction Type</div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
@@ -317,8 +351,8 @@ export default function PredictionsPage() {
         </div>
       )}
 
-      {/* Accuracy by Model Tier */}
-      {stats?.byTier && Object.keys(stats.byTier).length > 0 && (
+      {/* Accuracy by Model Tier — Expert only */}
+      {isExpert && stats?.byTier && Object.keys(stats.byTier).length > 0 && (
         <div className="bg-card border border-border rounded-xl p-6 space-y-4">
           <div className="text-lg font-semibold text-foreground">Accuracy by Model Tier</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

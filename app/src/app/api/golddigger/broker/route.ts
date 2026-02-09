@@ -32,6 +32,7 @@ import {
   disconnectSimulator,
   type TradingMode,
 } from "@/lib/golddigger/broker";
+import { bootstrapAutonomousTrading, stopAutoTrader } from "@/lib/golddigger/trading/auto-trader";
 
 // ── Auth helper ─────────────────────────────────────────────────────────
 
@@ -65,6 +66,8 @@ export async function GET(request: NextRequest) {
       await sim.testConnection();
     }
     if (sim.isConnected()) {
+      // Ensure fleet + auto-trader are running
+      try { bootstrapAutonomousTrading(); } catch { /* non-critical */ }
       return handleConnectedRequest(view, sim, config);
     }
   }
@@ -122,12 +125,31 @@ async function handleConnectedRequest(
     }
 
     if (view === "readiness") {
-      // TODO: Pull real stats from prediction tracking (Phase E)
-      const readiness = checkLiveReadiness({
-        totalPredictions: 0,
-        winRate: 0,
-      });
-      return NextResponse.json({ readiness });
+      // Pull real stats from prediction tracking
+      try {
+        const { getPredictionStats } = await import("@/lib/golddigger/predictions");
+        const stats = getPredictionStats();
+
+        // Extract totalPredictions and calculate win rate
+        const totalPredictions = stats.totalPredictions;
+        const resolved = stats.resolved;
+        const correct = stats.correct;
+        const winRate = resolved > 0 ? (correct / resolved) * 100 : 0;
+
+        const readiness = checkLiveReadiness({
+          totalPredictions,
+          winRate,
+        });
+        return NextResponse.json({ readiness });
+      } catch (error) {
+        console.error("[Broker] Failed to fetch prediction stats:", error);
+        // Fallback to zeros if stats fetch fails
+        const readiness = checkLiveReadiness({
+          totalPredictions: 0,
+          winRate: 0,
+        });
+        return NextResponse.json({ readiness });
+      }
     }
 
     // Default: account status
@@ -235,6 +257,10 @@ export async function POST(request: NextRequest) {
 
       const sim = initSimulator(capital);
       const test = await sim.testConnection();
+
+      // Bootstrap fleet + auto-trader when broker connects
+      try { bootstrapAutonomousTrading(); } catch { /* non-critical */ }
+
       return NextResponse.json({
         connected: true,
         tradingMode: "paper" as TradingMode,
@@ -276,6 +302,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Bootstrap fleet + auto-trader when broker connects
+    try { bootstrapAutonomousTrading(); } catch { /* non-critical */ }
+
     return NextResponse.json({
       connected: true,
       tradingMode: mode,
@@ -299,6 +328,7 @@ export async function DELETE() {
   removeBrokerCredentials();
   disconnectBroker();
   disconnectSimulator();
+  stopAutoTrader();
   saveBrokerConfig({ provider: "alpaca", tradingEnabled: false });
 
   return NextResponse.json({

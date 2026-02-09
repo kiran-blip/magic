@@ -10,9 +10,7 @@ import { TIER_INFO, type UserTier } from "@/lib/golddigger/tier";
 
 interface UserProfile {
   riskTolerance: "conservative" | "moderate" | "aggressive";
-  capitalRange: "under_5k" | "5k_50k" | "50k_500k" | "over_500k";
   focusAreas: Array<"stocks" | "crypto" | "business" | "real_estate" | "all">;
-  experienceLevel: "beginner" | "intermediate" | "advanced";
 }
 
 interface PublicConfig {
@@ -304,9 +302,7 @@ export default function GoldDiggerSettings() {
 
   // Investor profile
   const [riskTolerance, setRiskTolerance] = useState<UserProfile["riskTolerance"]>("moderate");
-  const [capitalRange, setCapitalRange] = useState<UserProfile["capitalRange"]>("5k_50k");
   const [focusAreas, setFocusAreas] = useState<UserProfile["focusAreas"]>(["stocks"]);
-  const [experienceLevel, setExperienceLevel] = useState<UserProfile["experienceLevel"]>("beginner");
 
   // Broker state
   const [brokerProvider, setBrokerProvider] = useState<BrokerProvider>("alpaca");
@@ -362,9 +358,7 @@ export default function GoldDiggerSettings() {
           setEnablePersonality(data.preferences?.enablePersonality ?? true);
           if (data.userProfile) {
             setRiskTolerance(data.userProfile.riskTolerance ?? "moderate");
-            setCapitalRange(data.userProfile.capitalRange ?? "5k_50k");
             setFocusAreas(data.userProfile.focusAreas ?? ["stocks"]);
-            setExperienceLevel(data.userProfile.experienceLevel ?? "beginner");
           }
         }
       } catch { setError("Failed to load settings"); }
@@ -477,7 +471,7 @@ export default function GoldDiggerSettings() {
           enableSafetyGovernor: enableSafety,
           enablePersonality,
         },
-        userProfile: { riskTolerance, capitalRange, focusAreas, experienceLevel },
+        userProfile: { riskTolerance, focusAreas },
       };
       if (anthropicKey.trim()) body.anthropicApiKey = anthropicKey.trim();
       if (openrouterKey.trim()) body.openrouterApiKey = openrouterKey.trim();
@@ -1030,29 +1024,35 @@ export default function GoldDiggerSettings() {
           </div>
         </div>
 
-        {/* Capital Range */}
+        {/* Investment Capital — pulled from broker account */}
         <div>
           <div className="text-xs text-muted mb-2">Investment Capital</div>
-          <div className="grid grid-cols-2 gap-2">
-            {([
-              { value: "under_5k" as const, label: "Under $5K" },
-              { value: "5k_50k" as const, label: "$5K – $50K" },
-              { value: "50k_500k" as const, label: "$50K – $500K" },
-              { value: "over_500k" as const, label: "$500K+" },
-            ]).map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setCapitalRange(opt.value)}
-                className={`px-3 py-2 rounded-lg border text-xs transition-colors ${
-                  capitalRange === opt.value
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border bg-background text-muted hover:border-accent/40 hover:text-foreground"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          {brokerStatus?.connected && brokerStatus.account ? (
+            <div className="bg-background border border-border rounded-lg p-3 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{fmt$(brokerStatus.account.portfolioValue)}</p>
+                <p className="text-[10px] text-muted mt-0.5">
+                  From your {brokerStatus.tradingMode === "live" ? "live" : "paper"} trading account
+                </p>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                brokerStatus.tradingMode === "live"
+                  ? "bg-green-500/10 text-green-400 border-green-500/20"
+                  : "bg-blue-500/10 text-blue-400 border-blue-500/20"
+              }`}>
+                {brokerStatus.tradingMode === "live" ? "Live" : "Paper"}
+              </span>
+            </div>
+          ) : (
+            <div className="bg-background border border-border rounded-lg p-3 text-center">
+              <p className="text-xs text-muted">
+                Connect a broker to see your investment capital
+              </p>
+              <p className="text-[10px] text-muted/60 mt-1">
+                Your capital is determined by your connected trading account
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Focus Areas */}
@@ -1070,30 +1070,6 @@ export default function GoldDiggerSettings() {
                 onClick={() => toggleFocusArea(opt.value)}
                 className={`px-3 py-2 rounded-lg border text-xs transition-colors ${
                   focusAreas.includes(opt.value) || focusAreas.includes("all")
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border bg-background text-muted hover:border-accent/40 hover:text-foreground"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Experience Level */}
-        <div>
-          <div className="text-xs text-muted mb-2">Experience Level</div>
-          <div className="grid grid-cols-3 gap-2">
-            {([
-              { value: "beginner" as const, label: "Beginner" },
-              { value: "intermediate" as const, label: "Intermediate" },
-              { value: "advanced" as const, label: "Advanced" },
-            ]).map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setExperienceLevel(opt.value)}
-                className={`px-3 py-2 rounded-lg border text-xs transition-colors ${
-                  experienceLevel === opt.value
                     ? "border-accent bg-accent/10 text-accent"
                     : "border-border bg-background text-muted hover:border-accent/40 hover:text-foreground"
                 }`}

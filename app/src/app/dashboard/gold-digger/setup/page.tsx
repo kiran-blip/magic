@@ -37,9 +37,7 @@ export default function GoldDiggerSetup() {
 
   // User profile state
   const [riskTolerance, setRiskTolerance] = useState<string>("moderate");
-  const [capitalRange, setCapitalRange] = useState<string>("5k_50k");
   const [focusAreas, setFocusAreas] = useState<string[]>(["all"]);
-  const [experienceLevel, setExperienceLevel] = useState<string>("intermediate");
 
   const [testStatus, setTestStatus] = useState<Record<string, { testing: boolean; result?: { success: boolean; message: string } }>>({});
   const [saving, setSaving] = useState(false);
@@ -107,9 +105,7 @@ export default function GoldDiggerSetup() {
           },
           userProfile: {
             riskTolerance,
-            capitalRange,
             focusAreas,
-            experienceLevel,
           },
           userTier: selectedTier,
         }),
@@ -306,29 +302,16 @@ export default function GoldDiggerSetup() {
           </div>
         </div>
 
-        {/* Capital Range */}
+        {/* Investment Capital — explained */}
         <div className="bg-background border border-border rounded-xl p-5 space-y-3">
           <div className="text-sm font-medium text-foreground">Investment Capital</div>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { value: "under_5k", label: "Under $5K", desc: "High-efficiency moves, every dollar counts" },
-              { value: "5k_50k", label: "$5K – $50K", desc: "Building a meaningful portfolio" },
-              { value: "50k_500k", label: "$50K – $500K", desc: "Serious capital, proper allocation" },
-              { value: "over_500k", label: "$500K+", desc: "Institutional-grade approach" },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setCapitalRange(opt.value)}
-                className={`p-3 rounded-lg border text-left transition-colors ${
-                  capitalRange === opt.value
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border bg-card text-muted hover:border-accent/40 hover:text-foreground"
-                }`}
-              >
-                <div className="text-sm font-medium">{opt.label}</div>
-                <div className="text-[10px] mt-0.5 opacity-70">{opt.desc}</div>
-              </button>
-            ))}
+          <div className="bg-card border border-border rounded-lg p-4 text-center">
+            <p className="text-xs text-muted">
+              Your investment capital is determined by your connected trading account.
+            </p>
+            <p className="text-[10px] text-muted/60 mt-1">
+              {`You'll`} connect a broker (or start the simulator) in Settings after setup.
+            </p>
           </div>
         </div>
 
@@ -352,31 +335,6 @@ export default function GoldDiggerSetup() {
                 }`}
               >
                 <div className="text-sm">{opt.icon} {opt.label}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Experience Level */}
-        <div className="bg-background border border-border rounded-xl p-5 space-y-3">
-          <div className="text-sm font-medium text-foreground">Experience Level</div>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { value: "beginner", label: "Beginner", desc: "New to investing, need guidance" },
-              { value: "intermediate", label: "Intermediate", desc: "Know the basics, want better strategy" },
-              { value: "advanced", label: "Advanced", desc: "Want alpha, skip the education" },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setExperienceLevel(opt.value)}
-                className={`p-3 rounded-lg border text-center transition-colors ${
-                  experienceLevel === opt.value
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border bg-card text-muted hover:border-accent/40 hover:text-foreground"
-                }`}
-              >
-                <div className="text-xs font-medium">{opt.label}</div>
-                <div className="text-[10px] mt-0.5 opacity-70">{opt.desc}</div>
               </button>
             ))}
           </div>
@@ -520,10 +478,10 @@ export default function GoldDiggerSetup() {
         {/* Profile summary */}
         <div className="bg-card border border-border rounded-lg p-4 text-xs text-muted space-y-1">
           <div className="font-medium text-foreground mb-2">Your Profile Summary:</div>
+          <div>Mode: <span className="text-accent">{TIER_INFO[selectedTier].label}</span></div>
           <div>Risk: <span className="text-accent capitalize">{riskTolerance}</span></div>
-          <div>Capital: <span className="text-accent">{capitalRange.replace(/_/g, " ").replace("5k", "$5K").replace("50k", "$50K").replace("500k", "$500K").replace("under", "Under").replace("over", "Over")}</span></div>
           <div>Focus: <span className="text-accent capitalize">{focusAreas.join(", ").replace(/_/g, " ")}</span></div>
-          <div>Experience: <span className="text-accent capitalize">{experienceLevel}</span></div>
+          <div>Capital: <span className="text-muted/60">Set when you connect a broker</span></div>
         </div>
       </div>
     );
