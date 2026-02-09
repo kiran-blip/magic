@@ -76,11 +76,48 @@ export interface ProposalApproval {
   agent: AgentRole;
   approved: boolean;
   notes: string;
+  timestamp: string;
+  payload?: {
+    riskScore?: number;
+    impactMetrics?: Record<string, number>;
+    recommendations?: string[];
+    verificationMethod?: string;
+  };
+}
+
+/**
+ * Verification status of a proposal — computed from approvals vs required.
+ */
+export type VerificationStatus =
+  | 'awaiting_verification'  // Not all required agents have reviewed
+  | 'verified'               // All required agents approved
+  | 'disputed'               // At least one required agent rejected
+  | 'mixed'                  // All reviewed but some rejected (with optional agents)
+  | 'overridden';            // CEO approved despite failed verification
+
+/**
+ * Detailed verification result from a single agent's cross-check.
+ */
+export interface VerificationResult {
+  agent: AgentRole;
+  approved: boolean;
+  confidence: number;          // 0-1 confidence in the verification
+  concerns: string[];          // Specific concerns found
+  recommendations: string[];   // What should change
+  metrics: Record<string, number>; // Quantitative checks
+  verificationMethod: string;  // e.g. "risk_model", "neural_crosscheck", "sentiment_analysis"
 }
 
 /**
  * Proposal that requires CEO approval/rejection.
  * Extends FleetMessage with additional proposal-specific fields.
+ *
+ * Chain-of-Verification flow:
+ *   1. Agent submits proposal → verificationStatus = 'awaiting_verification'
+ *   2. Required agents review → populate approvals[]
+ *   3. All required approve → verificationStatus = 'verified' → CEO sees it
+ *   4. Any required reject → verificationStatus = 'disputed' → CEO still sees (flagged)
+ *   5. CEO can approve regardless → verificationStatus = 'overridden' if disputed
  */
 export interface Proposal extends FleetMessage {
   type: 'PROPOSAL';
@@ -92,6 +129,8 @@ export interface Proposal extends FleetMessage {
   expectedReturn?: number;
   requiredApprovals: AgentRole[];
   approvals: ProposalApproval[];
+  verificationStatus?: VerificationStatus;
+  verificationDeadline?: string;    // ISO timestamp — auto-escalate if exceeded
   ceoDecision?: CEODecision;
 }
 
@@ -143,6 +182,11 @@ export interface FleetMetrics {
   totalReturn: number;
   messagesProcessed: number;
   activeDirectives: number;
+  /** Chain-of-Verification metrics */
+  verifiedProposals: number;
+  disputedProposals: number;
+  awaitingVerification: number;
+  verificationRate: number;
 }
 
 /**

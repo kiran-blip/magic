@@ -243,6 +243,64 @@ function getDb(): Database.Database {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- Fleet Persistence Tables
+    CREATE TABLE IF NOT EXISTS fleet_messages (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      sender TEXT NOT NULL,
+      recipients TEXT NOT NULL DEFAULT '[]',
+      type TEXT NOT NULL,
+      priority TEXT NOT NULL DEFAULT 'medium',
+      subject TEXT NOT NULL DEFAULT '',
+      payload TEXT DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending',
+      parent_id TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS fleet_proposals (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      sender TEXT NOT NULL,
+      recipients TEXT NOT NULL DEFAULT '[]',
+      type TEXT NOT NULL DEFAULT 'PROPOSAL',
+      priority TEXT NOT NULL DEFAULT 'medium',
+      subject TEXT NOT NULL DEFAULT '',
+      payload TEXT DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending',
+      proposal_type TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      reasoning TEXT NOT NULL DEFAULT '',
+      risk_level TEXT DEFAULT 'medium',
+      risk_factors TEXT DEFAULT '[]',
+      neural_confidence REAL,
+      expected_return REAL,
+      required_approvals TEXT DEFAULT '[]',
+      approvals TEXT DEFAULT '[]',
+      ceo_decision TEXT,
+      verification_status TEXT DEFAULT 'awaiting_verification',
+      verification_deadline TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS fleet_directives (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      type TEXT NOT NULL,
+      value TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS fleet_agent_metrics (
+      role TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'idle',
+      last_active TEXT NOT NULL,
+      messages_processed INTEGER DEFAULT 0,
+      proposals_made INTEGER DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     -- ── Indexes ──────────────────────────────────────────────────────────
 
     CREATE INDEX IF NOT EXISTS idx_conversations_timestamp ON conversations(timestamp);
@@ -264,6 +322,13 @@ function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_predictions_outcome ON tracked_predictions(outcome);
     CREATE INDEX IF NOT EXISTS idx_predictions_created ON tracked_predictions(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
+
+    CREATE INDEX IF NOT EXISTS idx_fleet_messages_sender ON fleet_messages(sender);
+    CREATE INDEX IF NOT EXISTS idx_fleet_messages_type ON fleet_messages(type);
+    CREATE INDEX IF NOT EXISTS idx_fleet_proposals_status ON fleet_proposals(status);
+    CREATE INDEX IF NOT EXISTS idx_fleet_proposals_sender ON fleet_proposals(sender);
+    CREATE INDEX IF NOT EXISTS idx_fleet_directives_active ON fleet_directives(active);
+    CREATE INDEX IF NOT EXISTS idx_fleet_proposals_verification ON fleet_proposals(verification_status);
   `);
 
   // Create FTS5 virtual table for full-text search (if not exists)

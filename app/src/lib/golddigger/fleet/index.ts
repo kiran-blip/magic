@@ -28,6 +28,14 @@ export { fleetBus } from './bus';
 // Neural network models (TradeScorer, PositionSizer, RiskAssessor)
 export * from './neural';
 
+// Chain-of-Verification (multi-agent cross-checking)
+export {
+  runVerification,
+  runAllVerifications,
+  verificationToApproval,
+  computeVerificationStatus,
+} from './verification';
+
 // Real agent behaviors (market data, neural networks, LLM)
 export { AGENT_BEHAVIORS } from './agent-behaviors';
 

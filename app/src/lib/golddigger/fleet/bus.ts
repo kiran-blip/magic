@@ -12,8 +12,12 @@ import {
   FleetMetrics,
   AgentStatusInfo,
   AgentStatus,
+  ProposalApproval,
+  VerificationStatus,
 } from './types';
+import { computeVerificationStatus } from './verification';
 import { FLEET_AGENTS } from './agents';
+import * as persistence from './persistence';
 
 /**
  * In-memory message bus for fleet communication.
@@ -27,6 +31,51 @@ class FleetBus {
 
   constructor() {
     this.initializeAgentStatuses();
+    this.restoreState();
+  }
+
+  /**
+   * Restore fleet state from SQLite on startup.
+   */
+  private restoreState(): void {
+    try {
+      // Restore messages (last 200)
+      const savedMessages = persistence.loadMessages(200);
+      if (savedMessages.length > 0) {
+        this.messages = savedMessages;
+        console.log(`[Fleet Bus] Restored ${savedMessages.length} messages from disk`);
+      }
+
+      // Restore proposals
+      const savedProposals = persistence.loadProposals();
+      if (savedProposals.length > 0) {
+        this.proposals = savedProposals;
+        console.log(`[Fleet Bus] Restored ${savedProposals.length} proposals from disk`);
+      }
+
+      // Restore directives
+      const savedDirectives = persistence.loadDirectives();
+      if (savedDirectives.length > 0) {
+        this.directives = savedDirectives;
+        console.log(`[Fleet Bus] Restored ${savedDirectives.length} directives from disk`);
+      }
+
+      // Restore agent metrics
+      const savedMetrics = persistence.loadAgentMetrics();
+      if (savedMetrics.size > 0) {
+        savedMetrics.forEach((info, role) => {
+          const existing = this.agentStatuses.get(role as AgentRole);
+          if (existing) {
+            existing.messagesProcessed = info.messagesProcessed;
+            existing.proposalsMade = info.proposalsMade;
+            existing.lastActive = info.lastActive;
+          }
+        });
+        console.log(`[Fleet Bus] Restored metrics for ${savedMetrics.size} agents`);
+      }
+    } catch (error) {
+      console.error("[Fleet Bus] Failed to restore state:", error);
+    }
   }
 
   /**
@@ -59,6 +108,7 @@ class FleetBus {
     };
 
     this.messages.push(message);
+    persistence.saveMessage(message);
 
     // Update sender's last active time
     if (msg.sender !== 'CEO') {
@@ -90,9 +140,13 @@ class FleetBus {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       status: 'pending',
+      verificationStatus: proposal.requiredApprovals.length > 0
+        ? 'awaiting_verification'
+        : 'verified',
     };
 
     this.proposals.push(fullProposal);
+    persistence.saveProposal(fullProposal);
 
     // Update sender's proposal count
     if (fullProposal.sender !== 'CEO') {
@@ -129,6 +183,12 @@ class FleetBus {
       timestamp: new Date().toISOString(),
     };
 
+    // Update verification status — if CEO approves a disputed proposal, mark as overridden
+    if (approved && proposal.verificationStatus === 'disputed') {
+      proposal.verificationStatus = 'overridden';
+    }
+    persistence.saveProposal(proposal);
+
     // Create decision message and notify all agents
     const decisionMsg: FleetMessage = {
       id: randomUUID(),
@@ -148,6 +208,7 @@ class FleetBus {
     };
 
     this.messages.push(decisionMsg);
+    persistence.saveMessage(decisionMsg);
 
     // Notify agents about decision
     proposal.recipients.forEach((recipient) => {
@@ -234,6 +295,7 @@ class FleetBus {
     };
 
     this.directives.push(fullDirective);
+    persistence.saveDirective(fullDirective);
 
     // Create a directive message and notify all agents
     const directiveMsg: FleetMessage = {
@@ -252,6 +314,7 @@ class FleetBus {
     };
 
     this.messages.push(directiveMsg);
+    persistence.saveMessage(directiveMsg);
 
     // Notify all agents
     this.agentStatuses.forEach((_, role) => {
@@ -286,6 +349,7 @@ class FleetBus {
     const directive = this.directives.find((d) => d.id === directiveId);
     if (directive) {
       directive.active = false;
+      persistence.saveDirective(directive);
     }
     return directive || null;
   }
@@ -337,6 +401,7 @@ class FleetBus {
     const message = this.messages.find((m) => m.id === messageId);
     if (message && message.status === 'pending') {
       message.status = 'delivered';
+      persistence.saveMessage(message);
     }
   }
 
@@ -348,6 +413,7 @@ class FleetBus {
     const message = this.messages.find((m) => m.id === messageId);
     if (message) {
       message.status = 'acted_on';
+      persistence.saveMessage(message);
     }
   }
 
@@ -361,6 +427,7 @@ class FleetBus {
     if (currentStatus) {
       Object.assign(currentStatus, status);
       currentStatus.lastActive = new Date().toISOString();
+      persistence.saveAgentMetrics(role, currentStatus);
     }
   }
 
@@ -409,6 +476,17 @@ class FleetBus {
       .map((p) => p.expectedReturn!);
     const totalReturn = returns.reduce((a, b) => a + b, 0);
 
+    // Chain-of-Verification metrics
+    const verifiedProposals = this.proposals.filter(
+      (p) => p.verificationStatus === 'verified',
+    ).length;
+    const disputedProposals = this.proposals.filter(
+      (p) => p.verificationStatus === 'disputed',
+    ).length;
+    const awaitingVerification = this.proposals.filter(
+      (p) => p.verificationStatus === 'awaiting_verification',
+    ).length;
+
     return {
       totalProposals: this.proposals.length,
       approvedProposals,
@@ -419,13 +497,21 @@ class FleetBus {
       totalReturn,
       messagesProcessed: this.messages.length,
       activeDirectives: this.directives.filter((d) => d.active).length,
+      verifiedProposals,
+      disputedProposals,
+      awaitingVerification,
+      verificationRate:
+        this.proposals.length > 0 ? verifiedProposals / this.proposals.length : 0,
     };
   }
 
   /**
    * Clear all data (for testing).
+   * Note: This clears only in-memory state; persistent SQLite data remains intact
+   * and will be restored on next FleetBus initialization.
    */
   clear(): void {
+    console.log("[Fleet Bus] Clearing in-memory state (SQLite persistence unchanged)");
     this.messages = [];
     this.proposals = [];
     this.directives = [];
@@ -458,6 +544,105 @@ class FleetBus {
       proposalsApproved: approved,
       proposalsRejected: rejected,
     };
+  }
+
+  // ── Chain-of-Verification Methods ──────────────────────────────────────
+
+  /**
+   * Submit an agent's verification approval/rejection for a proposal.
+   * Updates the proposal's approvals[] and recomputes verificationStatus.
+   * @param proposalId - ID of the proposal being reviewed
+   * @param approval - The agent's approval with notes and metrics
+   * @returns Updated proposal or null if not found
+   */
+  submitApproval(proposalId: string, approval: ProposalApproval): Proposal | null {
+    const proposal = this.proposals.find((p) => p.id === proposalId);
+    if (!proposal) {
+      return null;
+    }
+
+    // Prevent duplicate approvals from the same agent
+    const existingIdx = proposal.approvals.findIndex((a) => a.agent === approval.agent);
+    if (existingIdx >= 0) {
+      proposal.approvals[existingIdx] = approval;
+    } else {
+      proposal.approvals.push(approval);
+    }
+
+    // Recompute verification status
+    proposal.verificationStatus = computeVerificationStatus(proposal);
+    persistence.saveProposal(proposal);
+
+    // Create a verification message for the activity log
+    const verificationMsg: FleetMessage = {
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      sender: approval.agent,
+      recipients: ['CEO', proposal.sender as AgentRole],
+      type: 'RESPONSE',
+      priority: approval.approved ? 'medium' : 'high',
+      subject: `${approval.approved ? '✓ Verified' : '✗ Disputed'}: ${proposal.subject}`,
+      payload: {
+        proposalId,
+        approved: approval.approved,
+        verificationNotes: approval.notes,
+        verificationMethod: approval.payload?.verificationMethod,
+        concerns: approval.payload?.recommendations,
+      },
+      status: 'pending',
+      parentId: proposalId,
+    };
+
+    this.messages.push(verificationMsg);
+    persistence.saveMessage(verificationMsg);
+
+    // Notify CEO and proposal sender about the verification
+    this.notifyListeners('CEO', verificationMsg);
+    if (proposal.sender !== 'CEO') {
+      this.notifyListeners(proposal.sender as AgentRole, verificationMsg);
+    }
+
+    // Update verifier's status
+    const verifierStatus = this.agentStatuses.get(approval.agent);
+    if (verifierStatus) {
+      verifierStatus.lastActive = new Date().toISOString();
+      verifierStatus.messagesProcessed += 1;
+      persistence.saveAgentMetrics(approval.agent, verifierStatus);
+    }
+
+    console.log(
+      `[Fleet Bus] ${approval.agent} ${approval.approved ? 'verified' : 'disputed'} proposal ${proposalId} — status: ${proposal.verificationStatus}`,
+    );
+
+    return proposal;
+  }
+
+  /**
+   * Get proposals that still need verification from a specific agent.
+   * @param agent - The agent role to check
+   * @returns Proposals awaiting this agent's verification
+   */
+  getProposalsAwaitingVerification(agent: AgentRole): Proposal[] {
+    return this.proposals.filter((p) => {
+      // Must be pending CEO decision
+      if (p.ceoDecision) return false;
+      // Must require this agent's approval
+      if (!p.requiredApprovals.includes(agent)) return false;
+      // Must not already have this agent's approval
+      if (p.approvals.some((a) => a.agent === agent)) return false;
+      // Must not be the sender (agents don't verify their own proposals)
+      if (p.sender === agent) return false;
+      return true;
+    });
+  }
+
+  /**
+   * Get proposals by verification status.
+   * @param status - The verification status to filter by
+   * @returns Filtered proposals
+   */
+  getProposalsByVerificationStatus(status: VerificationStatus): Proposal[] {
+    return this.proposals.filter((p) => p.verificationStatus === status);
   }
 }
 

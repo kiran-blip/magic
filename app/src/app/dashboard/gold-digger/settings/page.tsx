@@ -576,40 +576,61 @@ export default function GoldDiggerSettings() {
 
             {/* Provider selector */}
             <div>
-              <p className="text-xs font-medium text-foreground mb-3">
-                Choose your broker — each user needs their own trading account
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {BROKER_OPTIONS.map(b => (
-                  <button
-                    key={b.id}
-                    onClick={() => b.status === "available" && setBrokerProvider(b.id)}
-                    className={`text-left p-3 rounded-lg border transition-colors relative ${
-                      brokerProvider === b.id && b.status === "available"
-                        ? "border-accent bg-accent/5"
-                        : b.status === "coming_soon"
-                          ? "border-border bg-background/50 opacity-60 cursor-not-allowed"
-                          : "border-border bg-background hover:border-accent/40 cursor-pointer"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-foreground">{b.name}</span>
-                      {b.status === "coming_soon" && (
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-medium text-foreground">
+                  Choose your broker — each user needs their own trading account
+                </p>
+                <span className="text-[10px] text-muted">{BROKER_OPTIONS.length} providers</span>
+              </div>
+
+              {/* Available now */}
+              <div className="mb-3">
+                <p className="text-[10px] text-muted uppercase tracking-wider mb-2">Available now</p>
+                <div className="grid grid-cols-1 gap-2">
+                  {BROKER_OPTIONS.filter(b => b.status === "available").map(b => (
+                    <button
+                      key={b.id}
+                      onClick={() => setBrokerProvider(b.id)}
+                      className={`text-left p-3 rounded-lg border transition-colors ${
+                        brokerProvider === b.id
+                          ? "border-accent bg-accent/5"
+                          : "border-border bg-background hover:border-accent/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-foreground">{b.name}</span>
+                        {brokerProvider === b.id && <div className="w-2 h-2 rounded-full bg-accent" />}
+                      </div>
+                      <p className="text-[10px] text-muted leading-relaxed">{b.desc}</p>
+                      <p className="text-[10px] text-muted/60 mt-1">{b.regions}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Coming soon — scrollable grid */}
+              <div>
+                <p className="text-[10px] text-muted uppercase tracking-wider mb-2">Coming soon</p>
+                <div className="max-h-64 overflow-y-auto pr-1 space-y-2 scrollbar-thin">
+                  {BROKER_OPTIONS.filter(b => b.status === "coming_soon").map(b => (
+                    <div
+                      key={b.id}
+                      className="p-3 rounded-lg border border-border bg-background/50 opacity-70"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-foreground">{b.name}</span>
                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
                           soon
                         </span>
-                      )}
-                      {brokerProvider === b.id && b.status === "available" && (
-                        <div className="w-2 h-2 rounded-full bg-accent" />
+                      </div>
+                      <p className="text-[10px] text-muted leading-relaxed">{b.desc}</p>
+                      <p className="text-[10px] text-muted/60 mt-1">{b.regions}</p>
+                      {b.note && (
+                        <p className="text-[10px] text-amber-400/70 mt-1.5 leading-relaxed">{b.note}</p>
                       )}
                     </div>
-                    <p className="text-[10px] text-muted leading-relaxed">{b.desc}</p>
-                    <p className="text-[10px] text-muted/60 mt-1">{b.regions}</p>
-                    {b.note && (
-                      <p className="text-[10px] text-amber-400/70 mt-1.5 leading-relaxed">{b.note}</p>
-                    )}
-                  </button>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
 

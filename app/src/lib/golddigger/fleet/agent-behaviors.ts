@@ -14,6 +14,10 @@ import {
   getSectorPerformance,
   getCryptoData,
 } from '../tools/market-tools';
+import {
+  runVerification,
+  verificationToApproval,
+} from './verification';
 
 // ── Helpers ──────────────────────────────────────────
 
@@ -262,38 +266,51 @@ export async function runRiskManager(): Promise<void> {
       } as Omit<FleetMessage, 'id' | 'timestamp' | 'status'>);
     }
 
-    // Review pending proposals for risk
+    // ── Chain-of-Verification: Review pending proposals for risk ──
+    const awaitingVerification = fleetBus.getProposalsAwaitingVerification(AgentRole.RISK_MANAGER);
+    if (awaitingVerification.length > 0) {
+      fleetBus.updateAgentStatus(AgentRole.RISK_MANAGER, { status: 'analyzing', currentTask: 'Verifying proposals' });
+
+      for (const proposal of awaitingVerification.slice(0, 3)) {
+        const result = await runVerification(AgentRole.RISK_MANAGER, proposal);
+        if (result) {
+          const approval = verificationToApproval(result);
+          fleetBus.submitApproval(proposal.id, approval);
+
+          console.log(
+            `[Fleet CRiskO] ${result.approved ? 'Verified' : 'Disputed'} proposal ${proposal.id} (${(result.confidence * 100).toFixed(0)}% confidence)`,
+          );
+        }
+      }
+    }
+
+    // Also send ad-hoc risk warnings for pending proposals (regardless of verification)
     const pendingProposals = fleetBus.getPendingProposals();
-    if (pendingProposals.length > 0) {
-      fleetBus.updateAgentStatus(AgentRole.RISK_MANAGER, { status: 'proposing' });
+    for (const proposal of pendingProposals.slice(0, 3)) {
+      let riskNote = '';
+      if (market.vixLevel > 25 && proposal.proposalType === 'trade') {
+        riskNote = `⚠ High VIX (${market.vixLevel.toFixed(1)}) — elevated risk for new trades. `;
+      }
+      if (market.sentiment === 'bearish' && proposal.proposalType === 'trade') {
+        riskNote += '⚠ Bearish market conditions — increased downside risk. ';
+      }
 
-      for (const proposal of pendingProposals.slice(0, 3)) {
-        // Assess risk based on market conditions
-        let riskNote = '';
-        if (market.vixLevel > 25 && proposal.proposalType === 'trade') {
-          riskNote = `⚠ High VIX (${market.vixLevel.toFixed(1)}) — elevated risk for new trades. `;
-        }
-        if (market.sentiment === 'bearish' && proposal.proposalType === 'trade') {
-          riskNote += '⚠ Bearish market conditions — increased downside risk. ';
-        }
-
-        if (riskNote) {
-          fleetBus.send({
-            sender: AgentRole.RISK_MANAGER,
-            recipients: ['CEO'],
-            type: 'RESPONSE',
-            priority: 'high',
-            subject: `Risk review of: ${proposal.subject}`,
-            payload: {
-              proposalId: proposal.id,
-              riskNote,
-              vixLevel: market.vixLevel,
-              marketSentiment: market.sentiment,
-              recommendation: market.vixLevel > 30 ? 'REJECT — too risky' : 'PROCEED WITH CAUTION',
-            },
-            parentId: proposal.id,
-          } as Omit<FleetMessage, 'id' | 'timestamp' | 'status'>);
-        }
+      if (riskNote) {
+        fleetBus.send({
+          sender: AgentRole.RISK_MANAGER,
+          recipients: ['CEO'],
+          type: 'RESPONSE',
+          priority: 'high',
+          subject: `Risk review of: ${proposal.subject}`,
+          payload: {
+            proposalId: proposal.id,
+            riskNote,
+            vixLevel: market.vixLevel,
+            marketSentiment: market.sentiment,
+            recommendation: market.vixLevel > 30 ? 'REJECT — too risky' : 'PROCEED WITH CAUTION',
+          },
+          parentId: proposal.id,
+        } as Omit<FleetMessage, 'id' | 'timestamp' | 'status'>);
       }
     }
 
@@ -375,6 +392,24 @@ export async function runPortfolioStrategist(): Promise<void> {
           },
         }
       ));
+    }
+
+    // ── Chain-of-Verification: Review pending proposals for portfolio impact ──
+    const awaitingPDVerification = fleetBus.getProposalsAwaitingVerification(AgentRole.PORTFOLIO_STRATEGIST);
+    if (awaitingPDVerification.length > 0) {
+      fleetBus.updateAgentStatus(AgentRole.PORTFOLIO_STRATEGIST, { status: 'analyzing', currentTask: 'Verifying proposals' });
+
+      for (const proposal of awaitingPDVerification.slice(0, 3)) {
+        const result = await runVerification(AgentRole.PORTFOLIO_STRATEGIST, proposal);
+        if (result) {
+          const approval = verificationToApproval(result);
+          fleetBus.submitApproval(proposal.id, approval);
+
+          console.log(
+            `[Fleet PD] ${result.approved ? 'Verified' : 'Disputed'} proposal ${proposal.id} (${(result.confidence * 100).toFixed(0)}% confidence)`,
+          );
+        }
+      }
     }
 
     // Check CEO directives for allocation guidance

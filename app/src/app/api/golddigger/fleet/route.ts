@@ -10,6 +10,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrchestrator } from "@/lib/golddigger/fleet/orchestrator";
 import { AgentRole, FleetMessage } from "@/lib/golddigger/fleet/types";
 import { FLEET_AGENTS, getAllAgents } from "@/lib/golddigger/fleet/agents";
+import { fleetBus } from "@/lib/golddigger/fleet/bus";
+import {
+  runAllVerifications,
+  verificationToApproval,
+} from "@/lib/golddigger/fleet/verification";
 
 function ok(data: unknown) {
   return NextResponse.json(data);
@@ -102,6 +107,35 @@ export async function GET(req: NextRequest) {
       return ok(orch.getMetrics());
     }
 
+    // ── Chain-of-Verification endpoints ──
+    if (action === "verification") {
+      const status = req.nextUrl.searchParams.get("status");
+      if (status === "awaiting") {
+        const proposals = fleetBus.getProposalsByVerificationStatus("awaiting_verification");
+        return ok({ proposals: proposals.map(enrichProposal) });
+      }
+      if (status === "verified") {
+        const proposals = fleetBus.getProposalsByVerificationStatus("verified");
+        return ok({ proposals: proposals.map(enrichProposal) });
+      }
+      if (status === "disputed") {
+        const proposals = fleetBus.getProposalsByVerificationStatus("disputed");
+        return ok({ proposals: proposals.map(enrichProposal) });
+      }
+      // Default: return all proposals with verification info
+      const all = orch.getProposals();
+      return ok({
+        proposals: all.map(enrichProposal),
+        summary: {
+          total: all.length,
+          awaiting: all.filter(p => p.verificationStatus === "awaiting_verification").length,
+          verified: all.filter(p => p.verificationStatus === "verified").length,
+          disputed: all.filter(p => p.verificationStatus === "disputed").length,
+          overridden: all.filter(p => p.verificationStatus === "overridden").length,
+        },
+      });
+    }
+
     // ── Default: full dashboard payload ──
     const state = orch.getFleetState();
     return ok({
@@ -171,6 +205,38 @@ export async function POST(req: NextRequest) {
         const result = orch.deactivateDirective(directiveId);
         if (!result) return err(`Directive ${directiveId} not found`, 404);
         return ok({ message: "Directive deactivated" });
+      }
+      // ── Chain-of-Verification: trigger verification on a proposal ──
+      case "verify": {
+        const proposalId = body.proposalId as string;
+        if (!proposalId) return err("proposalId is required");
+        const proposals = orch.getProposals();
+        const proposal = proposals.find(p => p.id === proposalId);
+        if (!proposal) return err(`Proposal ${proposalId} not found`, 404);
+
+        // Run all required verifications in parallel
+        const results = await runAllVerifications(proposal);
+        const approvals = results.map(verificationToApproval);
+
+        // Submit each approval to the bus
+        for (const approval of approvals) {
+          fleetBus.submitApproval(proposalId, approval);
+        }
+
+        // Get the updated proposal
+        const updated = proposals.find(p => p.id === proposalId);
+        return ok({
+          message: `Verification complete: ${results.filter(r => r.approved).length}/${results.length} approved`,
+          proposal: updated ? enrichProposal(updated) : null,
+          verifications: results.map(r => ({
+            agent: r.agent,
+            approved: r.approved,
+            confidence: r.confidence,
+            concerns: r.concerns,
+            recommendations: r.recommendations,
+            method: r.verificationMethod,
+          })),
+        });
       }
       default:
         return err(`Unknown action: ${action}`);
