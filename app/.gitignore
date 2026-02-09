@@ -30,12 +30,47 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# ══════════════════════════════════════════════════════════════════════
+# SECRETS & API KEYS — NEVER commit these
+# ══════════════════════════════════════════════════════════════════════
+
+# Environment files (contain API keys, JWT secrets)
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
 !.env.example
 
-# Gold Digger config data (contains API keys)
+# Gold Digger runtime data (contains encrypted API keys in config)
 /data/
+data/
+vault.enc
+**/vault.enc
+
+# Broker credentials and config
+golddigger-config.json
+**/golddigger-config.json
+
+# Any key/credential/secret files
+*.key
+*.pem
+*.cert
+*.p12
+*.pfx
+*.jks
+*credentials*
+*secret*
+!**/credential-detector.ts
+!**/credential-detector.test.ts
+
+# ══════════════════════════════════════════════════════════════════════
+# BUILD & DEPENDENCIES
+# ══════════════════════════════════════════════════════════════════════
 
 # vercel
 .vercel
@@ -43,3 +78,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# SQLite databases (may contain sensitive conversation data)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3

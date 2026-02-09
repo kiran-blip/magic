@@ -1,7 +1,15 @@
 node_modules/
 .next/
-.env
-.env.local
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# Secrets protection
+.env
+.env.*
+!.env.example
+**/data/
+*.key
+*.pem
+*.db
+*.db-wal

@@ -74,7 +74,7 @@ export default function GoldDiggerSettings() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/jarvis/settings");
+        const res = await fetch("/api/golddigger/settings");
         if (res.ok) {
           const data = await res.json();
           setConfig(data);
@@ -98,12 +98,44 @@ export default function GoldDiggerSettings() {
     load();
   }, []);
 
+  /* ── Client-side key validation ─────────────── */
+
+  function validateKeyLocally(provider: "anthropic" | "openrouter", key: string): string | null {
+    const trimmed = key.trim();
+    if (!trimmed) return null; // Empty is fine
+
+    if (trimmed.length < 20) {
+      return `Key is too short — did you paste the full ${provider === "anthropic" ? "Anthropic" : "OpenRouter"} key?`;
+    }
+    if (provider === "anthropic" && !trimmed.startsWith("sk-ant-")) {
+      return "Anthropic keys start with 'sk-ant-'. Check you pasted the right key.";
+    }
+    if (provider === "openrouter" && !trimmed.startsWith("sk-or-")) {
+      return "OpenRouter keys start with 'sk-or-'. Check you pasted the right key.";
+    }
+    if (/\s{2,}/.test(trimmed) || trimmed.split(" ").length > 3) {
+      return "This doesn't look like an API key — API keys don't contain spaces.";
+    }
+    return null;
+  }
+
   /* ── Save settings ───────────────────────────── */
 
   async function saveSettings() {
     setSaving(true);
     setError("");
     setSaved(false);
+    setWarning("");
+
+    // Client-side validation first
+    if (anthropicKey.trim()) {
+      const err = validateKeyLocally("anthropic", anthropicKey);
+      if (err) { setError(err); setSaving(false); return; }
+    }
+    if (openrouterKey.trim()) {
+      const err = validateKeyLocally("openrouter", openrouterKey);
+      if (err) { setError(err); setSaving(false); return; }
+    }
 
     try {
       const body: Record<string, unknown> = {
@@ -126,7 +158,7 @@ export default function GoldDiggerSettings() {
       if (anthropicKey.trim()) body.anthropicApiKey = anthropicKey.trim();
       if (openrouterKey.trim()) body.openrouterApiKey = openrouterKey.trim();
 
-      const res = await fetch("/api/jarvis/settings", {
+      const res = await fetch("/api/golddigger/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -140,11 +172,19 @@ export default function GoldDiggerSettings() {
         setConfig(data.config);
         setAnthropicKey("");
         setOpenrouterKey("");
+
+        // Show key test results
+        if (data.keyTestResults?.length) {
+          const allPassed = data.keyTestResults.every((r: { success: boolean }) => r.success);
+          if (allPassed) {
+            setWarning(""); // Clear any previous warnings
+          }
+        }
         if (data.warning) {
           setWarning(data.warning);
           setTimeout(() => setWarning(""), 8000);
         }
-        setTimeout(() => setSaved(false), 3000);
+        setTimeout(() => setSaved(false), 5000);
       }
     } catch {
       setError("Failed to save settings");
@@ -230,7 +270,7 @@ export default function GoldDiggerSettings() {
       {/* API Keys */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
         <div className="text-sm font-medium text-foreground">Update API Keys</div>
-        <p className="text-xs text-muted">Leave blank to keep existing key. Enter a new key to replace it.</p>
+        <p className="text-xs text-muted">Leave blank to keep existing key. Enter a new key to replace it. Keys are validated live before saving.</p>
 
         <div className="space-y-3">
           <div>
@@ -238,20 +278,36 @@ export default function GoldDiggerSettings() {
             <input
               type="password"
               value={anthropicKey}
-              onChange={(e) => setAnthropicKey(e.target.value)}
+              onChange={(e) => { setAnthropicKey(e.target.value); setError(""); }}
               placeholder={config?.hasAnthropicKey ? `Current: ${config.anthropicKeyHint}` : "sk-ant-api03-..."}
-              className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted/40 focus:outline-none focus:border-accent"
+              className={`w-full bg-background border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted/40 focus:outline-none focus:border-accent ${
+                anthropicKey.trim() && validateKeyLocally("anthropic", anthropicKey) ? "border-danger/50" : "border-border"
+              }`}
             />
+            {anthropicKey.trim() && validateKeyLocally("anthropic", anthropicKey) && (
+              <p className="text-[11px] text-danger mt-1">{validateKeyLocally("anthropic", anthropicKey)}</p>
+            )}
+            {anthropicKey.trim() && !validateKeyLocally("anthropic", anthropicKey) && (
+              <p className="text-[11px] text-success mt-1">Format looks valid</p>
+            )}
           </div>
           <div>
             <label className="text-xs text-muted mb-1 block">OpenRouter API Key</label>
             <input
               type="password"
               value={openrouterKey}
-              onChange={(e) => setOpenrouterKey(e.target.value)}
+              onChange={(e) => { setOpenrouterKey(e.target.value); setError(""); }}
               placeholder={config?.hasOpenrouterKey ? `Current: ${config.openrouterKeyHint}` : "sk-or-v1-..."}
-              className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted/40 focus:outline-none focus:border-accent"
+              className={`w-full bg-background border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted/40 focus:outline-none focus:border-accent ${
+                openrouterKey.trim() && validateKeyLocally("openrouter", openrouterKey) ? "border-danger/50" : "border-border"
+              }`}
             />
+            {openrouterKey.trim() && validateKeyLocally("openrouter", openrouterKey) && (
+              <p className="text-[11px] text-danger mt-1">{validateKeyLocally("openrouter", openrouterKey)}</p>
+            )}
+            {openrouterKey.trim() && !validateKeyLocally("openrouter", openrouterKey) && (
+              <p className="text-[11px] text-success mt-1">Format looks valid</p>
+            )}
           </div>
         </div>
       </div>
@@ -291,7 +347,7 @@ export default function GoldDiggerSettings() {
         {([
           { key: "disclaimers", label: "Financial Disclaimers", desc: "Auto-append disclaimers to investment analysis", value: enableDisclaimers, setter: setEnableDisclaimers },
           { key: "safety", label: "Safety Governor", desc: "Content guard, credential detection, PII filtering", value: enableSafety, setter: setEnableSafety },
-          { key: "personality", label: "JARVIS Personality", desc: "Warm, witty AI personality in responses", value: enablePersonality, setter: setEnablePersonality },
+          { key: "personality", label: "Gold Digger Personality", desc: "Warm, witty AI personality in responses", value: enablePersonality, setter: setEnablePersonality },
         ] as const).map((t) => (
           <div key={t.key} className="flex items-center justify-between py-2 border-b border-border last:border-0">
             <div>
@@ -424,15 +480,19 @@ export default function GoldDiggerSettings() {
         </button>
 
         <div className="flex items-center gap-3">
-          {saved && <span className="text-sm text-success">Settings saved</span>}
+          {saved && <span className="text-sm text-success">Settings saved &amp; keys verified</span>}
           {warning && <span className="text-sm text-warning">{warning}</span>}
-          {error && <span className="text-sm text-danger">{error}</span>}
+          {error && <span className="text-sm text-danger max-w-xs text-right">{error}</span>}
           <button
             onClick={saveSettings}
             disabled={saving}
-            className="px-6 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50 ${
+              saved
+                ? "bg-success hover:bg-success text-white"
+                : "bg-accent hover:bg-accent-hover text-white"
+            }`}
           >
-            {saving ? "Saving..." : "Save Changes"}
+            {saving ? "Testing & saving..." : saved ? "Saved!" : "Save Changes"}
           </button>
         </div>
       </div>

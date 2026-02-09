@@ -1,8 +1,9 @@
 FROM node:22-alpine AS base
 
-# Install dependencies
+# Install dependencies (including native build tools for better-sqlite3)
 FROM base AS deps
 WORKDIR /app
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 RUN npm ci
 
@@ -24,6 +25,11 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Copy better-sqlite3 native binding and its dependencies (required at runtime)
+COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
+COPY --from=builder /app/node_modules/bindings ./node_modules/bindings
+COPY --from=builder /app/node_modules/file-uri-to-path ./node_modules/file-uri-to-path
 
 # Create data directory for config persistence (Railway Volume mount point)
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data

@@ -65,7 +65,7 @@ export default function GoldDiggerSetup() {
     setTestStatus((prev) => ({ ...prev, [provider]: { testing: true } }));
 
     try {
-      const res = await fetch("/api/jarvis/settings/test", {
+      const res = await fetch("/api/golddigger/settings/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, apiKey }),
@@ -87,7 +87,7 @@ export default function GoldDiggerSetup() {
     setError("");
 
     try {
-      const res = await fetch("/api/jarvis/settings", {
+      const res = await fetch("/api/golddigger/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

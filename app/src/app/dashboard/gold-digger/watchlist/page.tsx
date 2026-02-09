@@ -12,7 +12,7 @@ interface QuoteData {
   lastUpdated: string;
 }
 
-const SUGGESTION_SYMBOLS = ["AAPL", "TSLA", "BTC", "ETH", "NVDA", "SPY"];
+const SUGGESTION_SYMBOLS = ["AAPL", "TSLA", "BTC-USD", "ETH-USD", "NVDA", "SPY", "GOOGL", "AMZN"];
 
 export default function WatchlistPage() {
   const router = useRouter();
@@ -28,7 +28,7 @@ export default function WatchlistPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/jarvis/watchlist");
+      const res = await fetch("/api/golddigger/watchlist");
       if (res.ok) {
         const data = await res.json();
         setQuotes(data.quotes ?? []);
@@ -54,8 +54,8 @@ export default function WatchlistPage() {
     const symbol = newSymbol.trim().toUpperCase();
 
     // Validate format
-    if (!/^[A-Z]{1,5}$/.test(symbol)) {
-      setError("Symbol must be 1-5 uppercase letters");
+    if (!/^[A-Z]{1,5}(-[A-Z]{1,5})?$/.test(symbol)) {
+      setError("Invalid symbol format (e.g., AAPL or BTC-USD)");
       return;
     }
 
@@ -64,7 +64,7 @@ export default function WatchlistPage() {
     setSuccess(null);
 
     try {
-      const res = await fetch("/api/jarvis/watchlist", {
+      const res = await fetch("/api/golddigger/watchlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol }),
@@ -93,7 +93,7 @@ export default function WatchlistPage() {
     setSuccess(null);
 
     try {
-      const res = await fetch("/api/jarvis/watchlist", {
+      const res = await fetch("/api/golddigger/watchlist", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol }),
@@ -129,7 +129,7 @@ export default function WatchlistPage() {
     setSuccess(null);
 
     try {
-      const res = await fetch("/api/jarvis/watchlist", {
+      const res = await fetch("/api/golddigger/watchlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol }),
@@ -198,8 +198,8 @@ export default function WatchlistPage() {
             type="text"
             value={newSymbol}
             onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-            placeholder="Enter symbol (e.g., AAPL, BTC)"
-            maxLength={5}
+            placeholder="Enter symbol (e.g., AAPL, BTC-USD)"
+            maxLength={10}
             className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder-muted focus:outline-none focus:border-accent"
             disabled={adding}
           />

@@ -1,24 +1,36 @@
 version: "3.8"
 
 services:
-  magic-computer:
+  gold-digger:
     build: ./app
     ports:
       - "3000:3000"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - golddigger-data:/app/data
     environment:
       - AUTH_USERNAME=${AUTH_USERNAME:-admin}
       - AUTH_PASSWORD=${AUTH_PASSWORD:-magic123}
       - JWT_SECRET=${JWT_SECRET:-magic-computer-secret-change-me}
-      - DOCKER_SOCKET=/var/run/docker.sock
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - GOLDDIGGER_ROUTING=${GOLDDIGGER_ROUTING:-auto}
+      - GOLDDIGGER_DATA_DIR=/app/data
       - OPENCLAW_API_URL=${OPENCLAW_API_URL:-http://host.docker.internal:11434}
     restart: unless-stopped
     networks:
-      - magic-network
+      - golddigger-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/golddigger/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  golddigger-data:
+    driver: local
 
 networks:
-  magic-network:
+  golddigger-network:
     driver: bridge
-    name: magic-network
+    name: golddigger-network

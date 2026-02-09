@@ -58,9 +58,9 @@ export default function PortfolioPage() {
     setLoading(true);
     try {
       const [invRes, resRes, statsRes] = await Promise.all([
-        fetch("/api/jarvis/history?type=investments&limit=50"),
-        fetch("/api/jarvis/history?type=research&limit=50"),
-        fetch("/api/jarvis/history?type=stats"),
+        fetch("/api/golddigger/history?type=investments&limit=50"),
+        fetch("/api/golddigger/history?type=research&limit=50"),
+        fetch("/api/golddigger/history?type=stats"),
       ]);
 
       if (invRes.ok) {
