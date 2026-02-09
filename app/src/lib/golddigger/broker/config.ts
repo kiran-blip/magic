@@ -18,12 +18,14 @@ import {
 // Types
 // ============================================================================
 
-export type BrokerProvider = "alpaca" | "simulator";
+export type BrokerProvider = "alpaca" | "simulator" | "crypto";
 
 export interface BrokerConfig {
   provider: BrokerProvider;
   encryptedApiKey: string;
   encryptedApiSecret: string;
+  encryptedPassphrase?: string; // For crypto exchanges that require it (KuCoin, Coinbase)
+  cryptoExchangeId?: string; // "binance" | "kucoin" | "kraken" | "bybit" | "coinbase"
   tradingMode: TradingMode;
   tradingEnabled: boolean;
   paperTradingStartDate: string; // ISO date
@@ -42,6 +44,9 @@ export interface BrokerConfig {
     allowMarginTrading: boolean;
   };
   lastConnectedAt?: string;
+  tradingStyle?: "spot" | "swing" | "day_trading" | "futures"; // What kind of trading (default: "spot")
+  riskAccepted?: boolean; // Whether user has accepted risk disclaimer
+  riskAcceptedAt?: string; // ISO timestamp of when they accepted
 }
 
 const DEFAULT_BROKER_CONFIG: BrokerConfig = {

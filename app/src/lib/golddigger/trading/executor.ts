@@ -12,11 +12,12 @@ import * as path from "path";
 import * as fs from "fs";
 import { randomUUID } from "crypto";
 import {
-  getBroker,
+  getActiveBroker,
   getBrokerConfig,
   type OrderParams,
   type BrokerOrder,
 } from "../broker";
+import { getQuote } from "../tools/market-tools";
 import { checkTradingOrder, type TradingCheckResult } from "../governor/trading-governor";
 import { logAuditEvent, upsertPosition, recordTransaction } from "../portfolio/manager";
 
@@ -92,14 +93,14 @@ function getDb(): Database.Database {
 export async function createOrderProposal(
   input: CreateProposalInput
 ): Promise<{ proposal: OrderProposal; governorCheck: TradingCheckResult }> {
-  const broker = getBroker();
+  const broker = getActiveBroker();
   const config = getBrokerConfig();
 
   // Get current portfolio state for governor check
   let availableCash = 0;
   let portfolioValue = 0;
 
-  if (broker && broker.isConnected()) {
+  if (broker) {
     try {
       const account = await broker.getAccount();
       availableCash = account.buyingPower;
@@ -109,7 +110,18 @@ export async function createOrderProposal(
     }
   }
 
-  const estimatedPrice = input.limitPrice ?? 0; // TODO: fetch current price if not provided
+  // Fetch real market price if no limit price provided
+  let estimatedPrice = input.limitPrice ?? 0;
+  if (estimatedPrice === 0) {
+    try {
+      const quote = await getQuote(input.symbol);
+      if (quote.data) {
+        estimatedPrice = quote.data.price;
+      }
+    } catch {
+      console.warn(`[Executor] Could not fetch price for ${input.symbol}, using fallback`);
+    }
+  }
   const estimatedCost = input.quantity * estimatedPrice;
 
   // Run governor check
@@ -311,8 +323,8 @@ export async function executeApprovedProposal(
     };
   }
 
-  const broker = getBroker();
-  if (!broker || !broker.isConnected()) {
+  const broker = getActiveBroker();
+  if (!broker) {
     return { success: false, error: "Broker not connected" };
   }
 

@@ -58,6 +58,11 @@ interface SimulatorOrder {
   canceledAt?: string;
 }
 
+interface PortfolioSnapshot {
+  timestamp: number; // Unix epoch seconds
+  equity: number;
+}
+
 interface SimulatorState {
   cash: number;
   positions: SimulatorPosition[];
@@ -65,6 +70,7 @@ interface SimulatorState {
   accountId: string;
   createdAt: string;
   lastSyncedAt: string;
+  portfolioHistory: PortfolioSnapshot[];
 }
 
 interface PriceCache {
@@ -104,6 +110,7 @@ export class SimulatorBroker {
         accountId: `sim-${Date.now()}`,
         createdAt: new Date().toISOString(),
         lastSyncedAt: new Date().toISOString(),
+        portfolioHistory: [{ timestamp: Math.floor(Date.now() / 1000), equity: startingCapital }],
       };
       this.saveState();
     }
@@ -378,6 +385,11 @@ export class SimulatorBroker {
       await this.checkAndFillLimitOrder(order);
     }
 
+    // Record portfolio snapshot after trade
+    if (order.status === "filled") {
+      await this.recordSnapshot();
+    }
+
     this.saveState();
     return this.mapOrderToResponse(order);
   }
@@ -468,6 +480,37 @@ export class SimulatorBroker {
   // Portfolio History
   // --------------------------------------------------------------------------
 
+  /**
+   * Record a portfolio snapshot (called after each trade fill).
+   */
+  async recordSnapshot(): Promise<void> {
+    try {
+      const account = await this.getAccount();
+      const snapshot: PortfolioSnapshot = {
+        timestamp: Math.floor(Date.now() / 1000),
+        equity: account.equity,
+      };
+
+      // Initialize history array if loading from old state
+      if (!this.state.portfolioHistory) {
+        this.state.portfolioHistory = [];
+      }
+
+      // Avoid duplicate snapshots within 30 seconds
+      const last = this.state.portfolioHistory[this.state.portfolioHistory.length - 1];
+      if (!last || snapshot.timestamp - last.timestamp > 30) {
+        this.state.portfolioHistory.push(snapshot);
+        // Keep last 500 snapshots
+        if (this.state.portfolioHistory.length > 500) {
+          this.state.portfolioHistory = this.state.portfolioHistory.slice(-500);
+        }
+        this.saveState();
+      }
+    } catch {
+      // Non-critical — skip snapshot
+    }
+  }
+
   async getPortfolioHistory(
     _period: "1D" | "1W" | "1M" | "3M" | "1A" = "1M",
     _timeframe: "1Min" | "5Min" | "15Min" | "1H" | "1D" = "1D"
@@ -478,17 +521,23 @@ export class SimulatorBroker {
     profitLossPct: number[];
     baseValue: number;
   }> {
-    // Simplified: return current values only
-    const now = Date.now();
     const account = await this.getAccount();
+    const history = this.state.portfolioHistory ?? [];
+
+    // Always include current state as the latest point
+    const now = Math.floor(Date.now() / 1000);
+    const allPoints = [
+      ...history,
+      { timestamp: now, equity: account.equity },
+    ];
 
     return {
-      timestamps: [Math.floor(now / 1000)],
-      equity: [account.equity],
-      profitLoss: [account.equity - this.startingCapital],
-      profitLossPct: [
-        ((account.equity - this.startingCapital) / this.startingCapital) * 100,
-      ],
+      timestamps: allPoints.map((p) => p.timestamp),
+      equity: allPoints.map((p) => p.equity),
+      profitLoss: allPoints.map((p) => p.equity - this.startingCapital),
+      profitLossPct: allPoints.map(
+        (p) => ((p.equity - this.startingCapital) / this.startingCapital) * 100
+      ),
       baseValue: this.startingCapital,
     };
   }
@@ -535,6 +584,8 @@ export class SimulatorBroker {
         );
         return;
       }
+      // Add sale proceeds back to cash
+      this.state.cash += orderCost;
     }
 
     // Fill the order
@@ -543,6 +594,10 @@ export class SimulatorBroker {
     order.status = "filled";
     order.filledAt = new Date().toISOString();
     order.updatedAt = new Date().toISOString();
+
+    console.log(
+      `[Simulator Broker] Filled ${order.side} ${order.quantity}x${order.symbol} @ $${currentPrice.toFixed(2)}`
+    );
 
     // Update position
     this.updatePositionFromFill(order, currentPrice);

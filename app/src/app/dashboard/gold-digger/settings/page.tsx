@@ -64,7 +64,8 @@ interface BrokerStatus {
 
 type BrokerProvider =
   | "alpaca" | "ibkr" | "questrade" | "tradier" | "etoro"
-  | "trading212" | "saxo" | "oanda" | "pepperstone" | "ig" | "simulator";
+  | "trading212" | "saxo" | "oanda" | "pepperstone" | "ig" | "simulator"
+  | "crypto";
 
 interface BrokerOption {
   id: BrokerProvider;
@@ -221,6 +222,20 @@ const BROKER_OPTIONS: BrokerOption[] = [
       { step: 3, title: "Connect", desc: "Enter your API key and secret to connect" },
     ],
   },
+  // ── Crypto Exchanges ──────────────────────────────────
+  {
+    id: "crypto" as BrokerProvider,
+    name: "Crypto Exchange (CCXT)",
+    desc: "Trade crypto on Binance, KuCoin, Kraken, Bybit, or Coinbase via CCXT",
+    regions: "Global — 100+ exchanges supported",
+    status: "available" as const,
+    note: "Connect to any major crypto exchange. Paper trading via testnet (Binance, Bybit, KuCoin). Live trading with your real exchange account.",
+    steps: [
+      { step: 1, title: "Choose exchange", desc: "Select your preferred crypto exchange (Binance, KuCoin, etc.)" },
+      { step: 2, title: "Get API keys", desc: "Create API keys from your exchange account settings" },
+      { step: 3, title: "Connect", desc: "Enter your credentials — encrypted before storage" },
+    ],
+  },
   // ── Built-in — Everywhere ──────────────────────────────
   {
     id: "simulator",
@@ -304,12 +319,21 @@ export default function GoldDiggerSettings() {
   const [riskTolerance, setRiskTolerance] = useState<UserProfile["riskTolerance"]>("moderate");
   const [focusAreas, setFocusAreas] = useState<UserProfile["focusAreas"]>(["stocks"]);
 
+  // Trading style and risk
+  const [tradingStyle, setTradingStyle] = useState<string>("spot");
+  const [riskAccepted, setRiskAccepted] = useState(false);
+
   // Broker state
   const [brokerProvider, setBrokerProvider] = useState<BrokerProvider>("alpaca");
   const [brokerStatus, setBrokerStatus] = useState<BrokerStatus | null>(null);
   const [alpacaKey, setAlpacaKey] = useState("");
   const [alpacaSecret, setAlpacaSecret] = useState("");
   const [simulatorCapital, setSimulatorCapital] = useState("100000");
+  // Crypto exchange state
+  const [cryptoExchange, setCryptoExchange] = useState<string>("binance");
+  const [cryptoKey, setCryptoKey] = useState("");
+  const [cryptoSecret, setCryptoSecret] = useState("");
+  const [cryptoPassphrase, setCryptoPassphrase] = useState("");
   const [brokerConnecting, setBrokerConnecting] = useState(false);
   const [brokerDisconnecting, setBrokerDisconnecting] = useState(false);
   const [brokerError, setBrokerError] = useState("");
@@ -393,6 +417,20 @@ export default function GoldDiggerSettings() {
       if (brokerProvider === "simulator") {
         const capital = parseInt(simulatorCapital) || 100000;
         payload = { provider: "simulator", startingCapital: capital };
+      } else if (brokerProvider === "crypto") {
+        if (!cryptoKey.trim() || !cryptoSecret.trim()) {
+          setBrokerError("API key and secret are required");
+          setBrokerConnecting(false);
+          return;
+        }
+        payload = {
+          provider: "crypto",
+          exchangeId: cryptoExchange,
+          apiKey: cryptoKey.trim(),
+          apiSecret: cryptoSecret.trim(),
+          passphrase: cryptoPassphrase.trim() || undefined,
+          tradingMode: "paper",
+        };
       } else {
         if (!alpacaKey.trim() || !alpacaSecret.trim()) {
           setBrokerError("Both API key and secret are required");
@@ -419,6 +457,9 @@ export default function GoldDiggerSettings() {
         setBrokerSuccess(data.message || "Connected successfully");
         setAlpacaKey("");
         setAlpacaSecret("");
+        setCryptoKey("");
+        setCryptoSecret("");
+        setCryptoPassphrase("");
         await loadBroker();
         setTimeout(() => setBrokerSuccess(""), 5000);
       }
@@ -546,6 +587,90 @@ export default function GoldDiggerSettings() {
       <TierSelector />
 
       {/* ══════════════════════════════════════════════════ */}
+      {/* ── TRADING STYLE ────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════ */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <div className="text-sm font-medium text-foreground">Trading Style</div>
+          <p className="text-xs text-muted mt-0.5">
+            Select your preferred trading approach. This affects AI strategy and risk management.
+          </p>
+        </div>
+
+        <div className="p-5 space-y-3">
+          {[
+            {
+              id: "spot",
+              label: "Spot / Long-Term Investing",
+              desc: "Buy and hold. No leverage or shorting. Safest approach.",
+            },
+            {
+              id: "swing",
+              label: "Swing Trading",
+              desc: "Hold for days to weeks. Momentum-based. May include short positions.",
+            },
+            {
+              id: "day_trading",
+              label: "Day Trading",
+              desc: "Open and close same day. Rapid trades. Higher risk.",
+            },
+            {
+              id: "futures",
+              label: "Futures & Derivatives",
+              desc: "Leverage-based contracts. Highest risk — can lose more than deposit.",
+            },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setTradingStyle(opt.id)}
+              className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                tradingStyle === opt.id
+                  ? "border-accent bg-accent/5"
+                  : "border-border bg-background hover:border-accent/40"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-foreground">{opt.label}</div>
+                  <div className="text-xs text-muted">{opt.desc}</div>
+                </div>
+                {tradingStyle === opt.id && <div className="w-2 h-2 rounded-full bg-accent" />}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Risk acknowledgment display */}
+        <div className="px-5 py-4 border-t border-border space-y-3">
+          {riskAccepted ? (
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-success" />
+              <span className="text-xs text-success font-medium">Risk acknowledged</span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-warning" />
+                <span className="text-xs text-warning font-medium">You must acknowledge risks before trading</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  id="settingsRiskAccept"
+                  checked={riskAccepted}
+                  onChange={(e) => setRiskAccepted(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <label htmlFor="settingsRiskAccept" className="text-xs text-foreground cursor-pointer">
+                  I understand and accept the risks of {tradingStyle === "futures" ? "futures trading including leverage" : tradingStyle === "day_trading" ? "day trading" : tradingStyle === "swing" ? "swing trading with short positions" : "investing"}
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════ */}
       {/* ── BROKER CONNECTION ─────────────────────────── */}
       {/* ══════════════════════════════════════════════════ */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -631,8 +756,26 @@ export default function GoldDiggerSettings() {
           </div>
         )}
 
+        {/* Not connected — check if risk is accepted first */}
+        {(!brokerStatus || !brokerStatus.connected) && !riskAccepted && (
+          <div className="px-5 py-4">
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-3 text-center">
+              <p className="text-sm font-medium text-amber-400 mb-1">Risk Acknowledgment Required</p>
+              <p className="text-xs text-muted mb-3">
+                You must acknowledge trading risks in the Trading Style section above before connecting a broker.
+              </p>
+              <a
+                href="#trading-style"
+                className="inline-block px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs transition-colors"
+              >
+                Accept risks above
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Not connected — provider selector + connect form */}
-        {(!brokerStatus || !brokerStatus.connected) && (
+        {(!brokerStatus || !brokerStatus.connected) && riskAccepted && (
           <div className="px-5 py-4 space-y-5">
 
             {/* Provider selector */}
@@ -832,8 +975,88 @@ export default function GoldDiggerSettings() {
               </button>
             )}
 
+            {/* Crypto exchange form */}
+            {brokerProvider === "crypto" && (
+              <>
+                <div className="space-y-3">
+                  {/* Exchange selector */}
+                  <div>
+                    <label className="text-xs text-muted mb-1 block">Exchange</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {[
+                        { id: "binance", name: "Binance", hasTestnet: true },
+                        { id: "kucoin", name: "KuCoin", hasTestnet: true, needsPass: true },
+                        { id: "kraken", name: "Kraken", hasTestnet: false },
+                        { id: "bybit", name: "Bybit", hasTestnet: true },
+                        { id: "coinbase", name: "Coinbase", hasTestnet: true, needsPass: true },
+                      ].map(ex => (
+                        <button
+                          key={ex.id}
+                          onClick={() => setCryptoExchange(ex.id)}
+                          className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                            cryptoExchange === ex.id
+                              ? "bg-accent/10 text-accent border-accent/20"
+                              : "text-muted border-border hover:text-foreground hover:bg-card"
+                          }`}
+                        >
+                          {ex.name}
+                          {ex.hasTestnet && <span className="ml-1 text-[9px] text-muted">(testnet)</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* API Key */}
+                  <div>
+                    <label className="text-xs text-muted mb-1 block">API Key</label>
+                    <input
+                      type="password"
+                      value={cryptoKey}
+                      onChange={e => { setCryptoKey(e.target.value); setBrokerError(""); }}
+                      placeholder={`Your ${cryptoExchange} API key`}
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted/40 focus:outline-none focus:border-accent transition-colors"
+                    />
+                  </div>
+                  {/* API Secret */}
+                  <div>
+                    <label className="text-xs text-muted mb-1 block">API Secret</label>
+                    <input
+                      type="password"
+                      value={cryptoSecret}
+                      onChange={e => { setCryptoSecret(e.target.value); setBrokerError(""); }}
+                      placeholder={`Your ${cryptoExchange} API secret`}
+                      className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted/40 focus:outline-none focus:border-accent transition-colors"
+                    />
+                  </div>
+                  {/* Passphrase (KuCoin, Coinbase) */}
+                  {(cryptoExchange === "kucoin" || cryptoExchange === "coinbase") && (
+                    <div>
+                      <label className="text-xs text-muted mb-1 block">Passphrase</label>
+                      <input
+                        type="password"
+                        value={cryptoPassphrase}
+                        onChange={e => { setCryptoPassphrase(e.target.value); setBrokerError(""); }}
+                        placeholder={`Your ${cryptoExchange} API passphrase`}
+                        className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted/40 focus:outline-none focus:border-accent transition-colors"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-muted">
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                  Credentials encrypted with AES-256-GCM before storage. Paper trading via testnet.
+                </div>
+                <button
+                  onClick={connectBroker}
+                  disabled={brokerConnecting || !cryptoKey.trim() || !cryptoSecret.trim()}
+                  className="w-full px-4 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {brokerConnecting ? `Connecting to ${cryptoExchange}...` : `Connect to ${cryptoExchange.charAt(0).toUpperCase() + cryptoExchange.slice(1)}`}
+                </button>
+              </>
+            )}
+
             {/* Coming soon notice for other providers */}
-            {brokerProvider !== "alpaca" && brokerProvider !== "simulator" && (
+            {brokerProvider !== "alpaca" && brokerProvider !== "simulator" && brokerProvider !== "crypto" && (
               <div className="bg-accent/5 border border-accent/20 rounded-lg px-4 py-3 text-center">
                 <p className="text-xs text-accent font-medium">
                   {BROKER_OPTIONS.find(b => b.id === brokerProvider)?.name} integration coming soon

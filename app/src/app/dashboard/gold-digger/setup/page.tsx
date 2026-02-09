@@ -6,9 +6,9 @@ import { TIER_INFO, type UserTier } from "@/lib/golddigger/tier";
 
 /* ── Step definitions ────────────────────────────── */
 
-type Step = "welcome" | "tier" | "keys" | "profile" | "preferences" | "test" | "complete";
+type Step = "welcome" | "tier" | "keys" | "profile" | "preferences" | "risk" | "test" | "complete";
 
-const STEPS: Step[] = ["welcome", "tier", "keys", "profile", "preferences", "test", "complete"];
+const STEPS: Step[] = ["welcome", "tier", "keys", "profile", "preferences", "risk", "test", "complete"];
 
 const STEP_LABELS: Record<Step, string> = {
   welcome: "Welcome",
@@ -16,6 +16,7 @@ const STEP_LABELS: Record<Step, string> = {
   keys: "API Keys",
   profile: "Your Profile",
   preferences: "Preferences",
+  risk: "Risk & Style",
   test: "Test",
   complete: "Done",
 };
@@ -38,6 +39,11 @@ export default function GoldDiggerSetup() {
   // User profile state
   const [riskTolerance, setRiskTolerance] = useState<string>("moderate");
   const [focusAreas, setFocusAreas] = useState<string[]>(["all"]);
+
+  // Trading style and risk acceptance
+  const [tradingStyle, setTradingStyle] = useState<string>("spot");
+  const [riskAccepted, setRiskAccepted] = useState(false);
+  const [futuresRiskAccepted, setFuturesRiskAccepted] = useState(false);
 
   const [testStatus, setTestStatus] = useState<Record<string, { testing: boolean; result?: { success: boolean; message: string } }>>({});
   const [saving, setSaving] = useState(false);
@@ -108,6 +114,10 @@ export default function GoldDiggerSetup() {
             focusAreas,
           },
           userTier: selectedTier,
+          tradingConfig: {
+            tradingStyle,
+            riskAccepted: true,
+          },
         }),
       });
 
@@ -343,6 +353,118 @@ export default function GoldDiggerSetup() {
     );
   }
 
+  /* ── Step: Risk & Trading Style ──────────────────────── */
+
+  function renderRisk() {
+    return (
+      <div className="space-y-6">
+        <div className="text-center space-y-2 mb-6">
+          <h2 className="text-xl font-bold text-foreground">Trading Style & Risk</h2>
+          <p className="text-muted text-sm">Choose how you want to trade and acknowledge the risks involved.</p>
+        </div>
+
+        {/* Trading Style Selection */}
+        <div className="bg-background border border-border rounded-xl p-5 space-y-3">
+          <div className="text-sm font-medium text-foreground">Trading Style</div>
+          <div className="space-y-3">
+            {[
+              {
+                id: "spot",
+                label: "Spot / Long-Term Investing",
+                desc: "Buy assets and hold. Your AI buys stocks/crypto at market price and holds positions. No leverage, no shorting. Simplest and safest approach.",
+              },
+              {
+                id: "swing",
+                label: "Swing Trading",
+                desc: "Hold positions for days to weeks. AI identifies momentum and trends for medium-term trades. May include both long and short positions.",
+              },
+              {
+                id: "day_trading",
+                label: "Day Trading",
+                desc: "Open and close positions within the same day. Requires more capital and attention. Includes rapid long and short positions. Higher risk.",
+              },
+              {
+                id: "futures",
+                label: "Futures & Derivatives",
+                desc: "Trade futures contracts with leverage. Includes long and short positions on underlying assets. Highest risk — potential losses can exceed your deposit.",
+              },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setTradingStyle(opt.id)}
+                className={`text-left p-4 rounded-lg border-2 transition-all ${
+                  tradingStyle === opt.id
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-accent/40"
+                }`}
+              >
+                <div className="text-sm font-medium text-foreground mb-1">{opt.label}</div>
+                <div className="text-xs text-muted">{opt.desc}</div>
+                {opt.id === "futures" && (
+                  <div className="mt-2 p-2 bg-red-500/10 border border-red-500/20 rounded text-[10px] text-red-400">
+                    Futures trading carries significant risk of loss including the possibility of losing more than your initial investment.
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Important Distinctions */}
+        <div className="bg-background border border-border rounded-lg p-4 space-y-2">
+          <div className="text-sm font-medium text-foreground mb-2">Important Distinctions</div>
+          <div className="space-y-2 text-xs text-muted">
+            <div><span className="text-accent font-medium">Long position</span> = You buy an asset expecting the price to GO UP. You profit when you sell at a higher price.</div>
+            <div><span className="text-accent font-medium">Short position</span> = You borrow and sell an asset expecting the price to GO DOWN. You profit by buying it back cheaper. Risk is theoretically unlimited.</div>
+            <div><span className="text-accent font-medium">Spot trading</span> = Only long positions. No leverage. You own the actual asset.</div>
+            <div><span className="text-accent font-medium">Futures</span> = Contracts to buy/sell at a future date. Uses leverage. Both long and short positions.</div>
+          </div>
+        </div>
+
+        {/* Risk Acknowledgment */}
+        <div className="bg-background border border-border rounded-xl p-5 space-y-4">
+          <div className="text-sm font-medium text-foreground">Risk Acknowledgment Required</div>
+          <div className="bg-card rounded-lg p-3 space-y-2 text-xs text-muted">
+            <div className="font-medium text-foreground mb-2">Gold Digger AGI is an AI-powered trading tool. By proceeding, you acknowledge and accept:</div>
+            <div>All investments carry risk. Past performance does not guarantee future results.</div>
+            <div>AI-generated trading decisions may result in financial loss.</div>
+            <div>You are solely responsible for all trades executed through this platform, whether manual or automated.</div>
+            <div>Paper/simulator trading uses virtual money with no financial risk. Live trading uses real funds.</div>
+            <div>This tool does not constitute financial advice. Consult a licensed financial advisor for investment decisions.</div>
+          </div>
+
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="riskAccept"
+              checked={riskAccepted}
+              onChange={(e) => setRiskAccepted(e.target.checked)}
+              className="mt-1"
+            />
+            <label htmlFor="riskAccept" className="text-xs text-foreground cursor-pointer">
+              I understand and accept these risks
+            </label>
+          </div>
+
+          {tradingStyle === "futures" && (
+            <div className="flex items-start gap-3 pt-2 border-t border-border">
+              <input
+                type="checkbox"
+                id="futuresRiskAccept"
+                checked={futuresRiskAccepted}
+                onChange={(e) => setFuturesRiskAccepted(e.target.checked)}
+                className="mt-1"
+              />
+              <label htmlFor="futuresRiskAccept" className="text-xs text-foreground cursor-pointer">
+                I understand that futures trading involves leverage and I may lose more than my initial investment
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   /* ── Step: Preferences ───────────────────────── */
 
   function renderPreferences() {
@@ -523,6 +645,11 @@ export default function GoldDiggerSetup() {
 
   function canProceed(): boolean {
     if (step === "keys") return !!(anthropicKey || openrouterKey);
+    if (step === "risk") {
+      if (!riskAccepted) return false;
+      if (tradingStyle === "futures" && !futuresRiskAccepted) return false;
+      return true;
+    }
     return true;
   }
 
@@ -570,6 +697,7 @@ export default function GoldDiggerSetup() {
         {step === "keys" && renderKeys()}
         {step === "profile" && renderProfile()}
         {step === "preferences" && renderPreferences()}
+        {step === "risk" && renderRisk()}
         {step === "test" && renderTest()}
         {step === "complete" && renderComplete()}
 

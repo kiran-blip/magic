@@ -18,6 +18,7 @@ import { verifyToken } from "@/lib/auth";
 import {
   AlpacaBroker,
   SimulatorBroker,
+  CryptoBroker,
   getBroker,
   initBroker,
   disconnectBroker,
@@ -30,7 +31,13 @@ import {
   getSimulator,
   initSimulator,
   disconnectSimulator,
+  getCryptoBroker,
+  initCryptoBroker,
+  disconnectCryptoBroker,
+  getSupportedExchanges,
   type TradingMode,
+  type CryptoExchangeId,
+  encryptCredential,
 } from "@/lib/golddigger/broker";
 import { bootstrapAutonomousTrading, stopAutoTrader } from "@/lib/golddigger/trading/auto-trader";
 
@@ -58,7 +65,16 @@ export async function GET(request: NextRequest) {
   const view = searchParams.get("view");
   const config = getBrokerConfig();
 
-  // Check for simulator first
+  // Check for crypto exchange first
+  if (config.provider === "crypto") {
+    const crypto = getCryptoBroker();
+    if (crypto && crypto.isConnected()) {
+      try { bootstrapAutonomousTrading(); } catch { /* non-critical */ }
+      return handleConnectedRequest(view, crypto, config);
+    }
+  }
+
+  // Check for simulator
   if (config.provider === "simulator") {
     let sim = getSimulator();
     if (!sim) {
@@ -105,7 +121,7 @@ export async function GET(request: NextRequest) {
 
 async function handleConnectedRequest(
   view: string | null,
-  broker: AlpacaBroker | SimulatorBroker,
+  broker: AlpacaBroker | SimulatorBroker | CryptoBroker,
   config: ReturnType<typeof getBrokerConfig>
 ) {
   try {
@@ -230,16 +246,83 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Supported crypto exchanges query
+  if (action === "exchanges") {
+    return NextResponse.json({ exchanges: getSupportedExchanges() });
+  }
+
   // Connect broker — store credentials and initialize
   try {
     const body = await request.json();
-    const { provider, apiKey, apiSecret, tradingMode, startingCapital } = body as {
+    const { provider, apiKey, apiSecret, tradingMode, startingCapital, exchangeId, passphrase } = body as {
       provider?: string;
       apiKey?: string;
       apiSecret?: string;
       tradingMode?: TradingMode;
       startingCapital?: number;
+      exchangeId?: CryptoExchangeId;
+      passphrase?: string;
     };
+
+    // ── Crypto exchange connection ──
+    if (provider === "crypto") {
+      if (!apiKey || !apiSecret || !exchangeId) {
+        return NextResponse.json(
+          { error: "API key, API secret, and exchange ID are required for crypto" },
+          { status: 400 }
+        );
+      }
+
+      const mode: TradingMode = tradingMode === "live" ? "live" : "paper";
+
+      // Disconnect any existing brokers
+      disconnectBroker();
+      disconnectSimulator();
+      disconnectCryptoBroker();
+
+      // Store encrypted credentials
+      saveBrokerConfig({
+        provider: "crypto",
+        cryptoExchangeId: exchangeId,
+        encryptedApiKey: encryptCredential(apiKey),
+        encryptedApiSecret: encryptCredential(apiSecret),
+        encryptedPassphrase: passphrase ? encryptCredential(passphrase) : undefined,
+        tradingMode: mode,
+        tradingEnabled: true,
+        lastConnectedAt: new Date().toISOString(),
+      });
+
+      // Initialize crypto broker
+      const cryptoBroker = initCryptoBroker({
+        exchangeId,
+        apiKey,
+        apiSecret,
+        passphrase,
+        tradingMode: mode,
+      });
+
+      // Test connection
+      const test = await cryptoBroker.testConnection();
+      if (!test.connected) {
+        removeBrokerCredentials();
+        disconnectCryptoBroker();
+        return NextResponse.json(
+          { error: `Crypto exchange connection failed: ${test.error}` },
+          { status: 400 }
+        );
+      }
+
+      // Bootstrap fleet + auto-trader
+      try { bootstrapAutonomousTrading(); } catch { /* non-critical */ }
+
+      return NextResponse.json({
+        connected: true,
+        tradingMode: mode,
+        account: test.account,
+        exchange: exchangeId,
+        message: `Connected to ${exchangeId.charAt(0).toUpperCase() + exchangeId.slice(1)} (${mode} mode)`,
+      });
+    }
 
     // ── Simulator connection ──
     if (provider === "simulator") {
@@ -328,6 +411,7 @@ export async function DELETE() {
   removeBrokerCredentials();
   disconnectBroker();
   disconnectSimulator();
+  disconnectCryptoBroker();
   stopAutoTrader();
   saveBrokerConfig({ provider: "alpaca", tradingEnabled: false });
 

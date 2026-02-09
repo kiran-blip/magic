@@ -143,6 +143,20 @@ interface FleetStatus {
   };
 }
 
+interface FleetProposal {
+  id: string;
+  sender: string;
+  proposalType: string;
+  summary: string;
+  reasoning: string;
+  timestamp: string;
+  neuralConfidence?: number;
+  riskAssessment?: { level: string; factors: string[] };
+  verificationStatus?: string;
+  payload?: Record<string, unknown>;
+  ceoDecision?: { approved: boolean; notes?: string };
+}
+
 interface RecentOrder {
   id: string;
   symbol: string;
@@ -259,6 +273,12 @@ export default function PortfolioPage() {
   // Performance chart data
   const [history, setHistory] = useState<PortfolioHistory | null>(null);
 
+  // Proposals for intermediate/expert tier
+  const [proposals, setProposals] = useState<FleetProposal[]>([]);
+
+  // Setup gate
+  const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<string>("overview");
   const [symbolFilter, setSymbolFilter] = useState("");
@@ -266,6 +286,15 @@ export default function PortfolioPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      // Check setup completion
+      try {
+        const healthRes = await fetch("/api/golddigger/health");
+        if (healthRes.ok) {
+          const h = await healthRes.json();
+          setSetupComplete(h.setupComplete ?? false);
+        }
+      } catch { setSetupComplete(false); }
+
       const [brokerRes, posRes, invRes, resRes, statsRes, fleetRes, ordersRes, historyRes] = await Promise.all([
         fetch("/api/golddigger/broker"),
         fetch("/api/golddigger/broker?view=positions"),
@@ -303,12 +332,23 @@ export default function PortfolioPage() {
         const d = await historyRes.json();
         setHistory(d.history ?? null);
       }
+
+      // Load proposals for intermediate tier
+      if (tier === "intermediate" || tier === "expert") {
+        try {
+          const proposalsRes = await fetch("/api/golddigger/fleet?action=proposals&status=pending");
+          if (proposalsRes.ok) {
+            const d = await proposalsRes.json();
+            setProposals(d.proposals ?? []);
+          }
+        } catch { /* non-critical */ }
+      }
     } catch {
       // Non-critical
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tier]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -334,6 +374,32 @@ export default function PortfolioPage() {
     return (
       <div className="max-w-4xl mx-auto flex items-center justify-center py-20">
         <div className="text-muted text-sm">Loading...</div>
+      </div>
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════ */
+  /* ── SETUP GATE ─────────────────────────────────────── */
+  /* ══════════════════════════════════════════════════════ */
+
+  if (setupComplete === false) {
+    return (
+      <div className="max-w-2xl mx-auto py-12 space-y-6">
+        <div className="bg-card border border-border rounded-xl p-8 text-center space-y-4">
+          <div className="text-5xl">🏗</div>
+          <div>
+            <h2 className="text-xl font-bold text-foreground">Complete Setup First</h2>
+            <p className="text-sm text-muted mt-2 max-w-md mx-auto">
+              Before Gold Digger can manage your investments, you need to complete the initial setup — including adding your API keys.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/gold-digger/setup"
+            className="inline-block px-6 py-3 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            Complete Setup
+          </Link>
+        </div>
       </div>
     );
   }
@@ -447,14 +513,14 @@ export default function PortfolioPage() {
               </div>
             )}
 
-            {/* AI Fleet Activity */}
+            {/* AI Fleet Activity — simplified for newbies */}
             <div className="bg-card border border-border rounded-xl p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium text-foreground">Your AI Team</div>
                 {fleet?.running && (
                   <span className="text-[10px] text-emerald-400 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Active
+                    Working
                   </span>
                 )}
               </div>
@@ -465,7 +531,7 @@ export default function PortfolioPage() {
                   {Object.values(fleet.agents).slice(0, 6).map((agent) => (
                     <div key={agent.role} className="bg-background rounded-lg p-2 text-center">
                       <div className={`w-2 h-2 rounded-full mx-auto mb-1 ${
-                        agent.status === "idle" ? "bg-muted" :
+                        agent.status === "idle" ? "bg-emerald-400/50" :
                         agent.status === "analyzing" ? "bg-blue-400 animate-pulse" :
                         agent.status === "proposing" ? "bg-amber-400 animate-pulse" :
                         "bg-emerald-400 animate-pulse"
@@ -478,26 +544,25 @@ export default function PortfolioPage() {
                 </div>
               )}
 
-              {/* Fleet stats */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-background rounded-lg p-3 text-center">
-                  <p className="text-xs text-muted">Proposals</p>
-                  <p className="text-lg font-bold text-foreground">{fleet?.metrics?.totalProposals ?? 0}</p>
+              {/* Newbie-friendly status — NO confusing proposal counts */}
+              {fleet?.running ? (
+                <div className="bg-background rounded-lg p-3 text-center space-y-1">
+                  <p className="text-xs text-emerald-400 font-medium">
+                    {orders.filter(o => o.status === "filled").length > 0
+                      ? `Your AI has made ${orders.filter(o => o.status === "filled").length} trade${orders.filter(o => o.status === "filled").length !== 1 ? "s" : ""} for you`
+                      : "Your AI is analyzing markets and finding opportunities"
+                    }
+                  </p>
+                  <p className="text-[10px] text-muted">
+                    6 AI agents are continuously monitoring stocks, risk, and market sentiment
+                  </p>
                 </div>
+              ) : (
                 <div className="bg-background rounded-lg p-3 text-center">
-                  <p className="text-xs text-muted">Trades Made</p>
-                  <p className="text-lg font-bold text-foreground">{orders.length}</p>
+                  <p className="text-xs text-muted">
+                    Your AI team is starting up. It may take a moment to begin analyzing markets.
+                  </p>
                 </div>
-                <div className="bg-background rounded-lg p-3 text-center">
-                  <p className="text-xs text-muted">Research</p>
-                  <p className="text-lg font-bold text-foreground">{research.length}</p>
-                </div>
-              </div>
-
-              {!fleet?.running && (
-                <p className="text-xs text-muted text-center">
-                  Your AI team is starting up. It may take a moment to begin analyzing markets.
-                </p>
               )}
             </div>
 
@@ -548,9 +613,16 @@ export default function PortfolioPage() {
                 <div className="divide-y divide-border">
                   {positions.map((p) => (
                     <div key={p.symbol} className="px-5 py-3 flex items-center justify-between">
-                      <div>
+                      <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-foreground">{p.symbol}</span>
-                        <span className="text-xs text-muted ml-2">{p.quantity} shares</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
+                          p.side === "long"
+                            ? "bg-green-500/10 text-green-400 border-green-500/20"
+                            : "bg-red-500/10 text-red-400 border-red-500/20"
+                        }`}>
+                          {p.side.toUpperCase()}
+                        </span>
+                        <span className="text-xs text-muted">{p.quantity} shares</span>
                       </div>
                       <div className="text-right">
                         <div className="text-sm font-medium text-foreground">{fmt$(p.marketValue)}</div>
@@ -582,20 +654,54 @@ export default function PortfolioPage() {
   /* ── INTERMEDIATE / EXPERT: Full Portfolio ──────────── */
   /* ══════════════════════════════════════════════════════ */
 
+  // Proposal approval handler (for intermediate tier)
+  const handleProposalDecision = async (proposalId: string, approved: boolean) => {
+    try {
+      await fetch("/api/golddigger/fleet?action=decide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposalId,
+          approved,
+          notes: approved ? "Approved by user" : "Rejected by user",
+        }),
+      });
+      // Refresh data after decision
+      setProposals((prev) => prev.filter((p) => p.id !== proposalId));
+      if (approved) {
+        // Small delay then refresh to show the trade
+        setTimeout(loadData, 3000);
+      }
+    } catch {
+      // Non-critical
+    }
+  };
+
+  const pendingTradeProposals = proposals.filter(p => p.proposalType === "trade" && !p.ceoDecision);
+
   const tabs = tier === "expert"
     ? [
         { key: "overview", label: "Overview", icon: "📊" },
         { key: "positions", label: "Positions", icon: "💼" },
+        { key: "approvals", label: `Approvals${pendingTradeProposals.length > 0 ? ` (${pendingTradeProposals.length})` : ""}`, icon: "✅" },
         { key: "decisions", label: "AI Decisions", icon: "📈" },
         { key: "research", label: "Research", icon: "🔍" },
         { key: "stats", label: "Memory", icon: "🧠" },
       ]
-    : [
-        { key: "overview", label: "Overview", icon: "📊" },
-        { key: "positions", label: "Positions", icon: "💼" },
-        { key: "decisions", label: "AI Decisions", icon: "📈" },
-        { key: "research", label: "Research", icon: "🔍" },
-      ];
+    : tier === "intermediate"
+      ? [
+          { key: "overview", label: "Overview", icon: "📊" },
+          { key: "positions", label: "Positions", icon: "💼" },
+          { key: "approvals", label: `Approvals${pendingTradeProposals.length > 0 ? ` (${pendingTradeProposals.length})` : ""}`, icon: "✅" },
+          { key: "decisions", label: "AI Decisions", icon: "📈" },
+          { key: "research", label: "Research", icon: "🔍" },
+        ]
+      : [
+          { key: "overview", label: "Overview", icon: "📊" },
+          { key: "positions", label: "Positions", icon: "💼" },
+          { key: "decisions", label: "AI Decisions", icon: "📈" },
+          { key: "research", label: "Research", icon: "🔍" },
+        ];
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -830,8 +936,12 @@ export default function PortfolioPage() {
                   <div key={p.symbol} className="px-5 py-3 grid grid-cols-6 gap-2 items-center">
                     <div>
                       <span className="text-sm font-medium text-foreground">{p.symbol}</span>
-                      <span className={`ml-1.5 text-[10px] ${p.side === "long" ? "text-green-400" : "text-red-400"}`}>
-                        {p.side}
+                      <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full border ${
+                        p.side === "long"
+                          ? "bg-green-500/10 text-green-400 border-green-500/20"
+                          : "bg-red-500/10 text-red-400 border-red-500/20"
+                      }`}>
+                        {p.side.toUpperCase()}
                       </span>
                     </div>
                     <span className="text-sm text-foreground text-right">{p.quantity}</span>
@@ -866,6 +976,110 @@ export default function PortfolioPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── TAB: Approvals (Intermediate & Expert) ───── */}
+      {tab === "approvals" && (
+        <div className="space-y-3">
+          {pendingTradeProposals.length === 0 && (
+            <div className="bg-card border border-border rounded-xl p-8 text-center">
+              <div className="text-3xl mb-2">✅</div>
+              <div className="text-sm text-muted">No pending trade proposals</div>
+              <div className="text-xs text-muted/50 mt-1">
+                Your AI fleet will generate trade proposals as it finds opportunities.
+                {tier === "intermediate" ? " You'll approve or reject them here." : " Review and manage them here."}
+              </div>
+            </div>
+          )}
+
+          {pendingTradeProposals.map((proposal) => {
+            const payload = proposal.payload ?? {};
+            const symbol = (payload.symbol as string) ?? "";
+            const action = (payload.action as string) ?? "BUY";
+            const entryPrice = payload.entryPrice as number | undefined;
+            const stopLoss = payload.stopLoss as number | undefined;
+            const takeProfit = payload.takeProfit as number | undefined;
+            const confidence = proposal.neuralConfidence ?? 0;
+            const riskLevel = proposal.riskAssessment?.level ?? "medium";
+
+            return (
+              <div key={proposal.id} className="bg-card border border-border rounded-xl p-5 space-y-3">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                      action === "BUY" ? "bg-green-500/10 text-green-400 border-green-500/20"
+                        : "bg-red-500/10 text-red-400 border-red-500/20"
+                    }`}>
+                      {action}
+                    </span>
+                    {symbol && <span className="text-sm font-bold text-foreground">{symbol}</span>}
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                      riskLevel === "low" ? "bg-green-500/10 text-green-400 border-green-500/20" :
+                      riskLevel === "medium" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                      "bg-red-500/10 text-red-400 border-red-500/20"
+                    }`}>
+                      {riskLevel} risk
+                    </span>
+                    {proposal.verificationStatus && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                        proposal.verificationStatus === "verified" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                        proposal.verificationStatus === "disputed" ? "bg-red-500/10 text-red-400 border-red-500/20" :
+                        "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                      }`}>
+                        {proposal.verificationStatus}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-accent font-medium">{(confidence * 100).toFixed(0)}% confidence</div>
+                    <div className="text-[10px] text-muted">
+                      {new Date(proposal.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Summary */}
+                <p className="text-sm text-foreground">{proposal.summary}</p>
+
+                {/* Trade details */}
+                {(entryPrice || stopLoss || takeProfit) && (
+                  <div className="flex gap-4 text-xs">
+                    {entryPrice && <span className="text-muted">Entry: <span className="text-foreground">${entryPrice.toLocaleString()}</span></span>}
+                    {stopLoss && <span className="text-muted">Stop: <span className="text-red-400">${stopLoss.toLocaleString()}</span></span>}
+                    {takeProfit && <span className="text-muted">Target: <span className="text-green-400">${takeProfit.toLocaleString()}</span></span>}
+                  </div>
+                )}
+
+                {/* Reasoning */}
+                <p className="text-xs text-muted/70 leading-relaxed">{proposal.reasoning}</p>
+
+                {/* Risk factors */}
+                {proposal.riskAssessment?.factors && proposal.riskAssessment.factors.length > 0 && (
+                  <div className="text-[10px] text-muted/50">
+                    Risks: {proposal.riskAssessment.factors.join(" · ")}
+                  </div>
+                )}
+
+                {/* Approve / Reject buttons */}
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => handleProposalDecision(proposal.id, true)}
+                    className="flex-1 px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Approve Trade
+                  </button>
+                  <button
+                    onClick={() => handleProposalDecision(proposal.id, false)}
+                    className="flex-1 px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

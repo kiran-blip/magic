@@ -15,6 +15,7 @@ import {
   runAllVerifications,
   verificationToApproval,
 } from "@/lib/golddigger/fleet/verification";
+import { executeFleetTradeProposal } from "@/lib/golddigger/trading/auto-trader";
 
 function ok(data: unknown) {
   return NextResponse.json(data);
@@ -191,7 +192,24 @@ export async function POST(req: NextRequest) {
         if (!proposalId || typeof approved !== "boolean") return err("proposalId and approved are required");
         const result = orch.decideProposal(proposalId, approved, notes);
         if (!result) return err(`Proposal ${proposalId} not found`, 404);
-        return ok({ message: approved ? "Approved" : "Rejected", proposal: enrichProposal(result) });
+
+        // If approved and it's a trade proposal, execute it on the broker
+        let execution = null;
+        if (approved && result.proposalType === "trade") {
+          try {
+            execution = await executeFleetTradeProposal(result);
+            console.log(`[Fleet API] Trade execution for ${proposalId}:`, execution.success ? "SUCCESS" : execution.error);
+          } catch (execError) {
+            console.error(`[Fleet API] Trade execution error for ${proposalId}:`, execError);
+            execution = { success: false, error: execError instanceof Error ? execError.message : "Execution failed" };
+          }
+        }
+
+        return ok({
+          message: approved ? "Approved" : "Rejected",
+          proposal: enrichProposal(result),
+          execution,
+        });
       }
       case "directive": {
         const { type, value } = body as { type?: string; value?: string };

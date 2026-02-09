@@ -21,7 +21,7 @@ import {
   type CreateProposalInput,
   type OrderProposal,
 } from "./executor";
-import { getBroker, getSimulator, getBrokerConfig } from "../broker";
+import { getActiveBroker, getBrokerConfig } from "../broker";
 import { loadConfig } from "../config/settings";
 import type { UserTier } from "../tier";
 
@@ -96,20 +96,29 @@ export async function executeFleetTradeProposal(
     return { success: false, error: "No symbol found in proposal" };
   }
 
-  // Check broker connection
-  const config = getBrokerConfig();
-  const broker =
-    config.provider === "simulator" ? getSimulator() : getBroker();
-  if (!broker || !broker.isConnected()) {
+  // Check broker connection — use unified accessor
+  const broker = getActiveBroker();
+  if (!broker) {
     return { success: false, error: "Broker not connected" };
   }
 
   // Calculate position size (conservative for auto-trades)
   let quantity = 1;
+  let livePrice = entryPrice;
   try {
     const account = await broker.getAccount();
     const targetValue = account.portfolioValue * (DEFAULT_CONFIG.maxAutoPositionPercent / 100);
-    const price = entryPrice || 100; // Fallback — executor will fetch real price
+
+    // Fetch real price if no entry price from proposal
+    if (!livePrice || livePrice === 0) {
+      const { getQuote } = await import("../tools/market-tools");
+      const quote = await getQuote(symbol);
+      if (quote.data) {
+        livePrice = quote.data.price;
+      }
+    }
+
+    const price = livePrice || 100;
     quantity = Math.max(1, Math.floor(targetValue / price));
   } catch {
     // Use minimum quantity on error
@@ -121,7 +130,7 @@ export async function executeFleetTradeProposal(
     side: action === "SELL" ? "sell" : "buy",
     quantity,
     orderType: "market",
-    limitPrice: entryPrice || undefined,
+    limitPrice: livePrice || entryPrice || undefined,
     stopLoss,
     takeProfit,
     confidence: proposal.neuralConfidence,
